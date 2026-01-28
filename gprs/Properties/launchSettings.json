@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "gprs": {
+      "commandName": "Project",
+      "hotReloadEnabled": true
+    }
+  }
+}
