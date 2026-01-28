@@ -9,7 +9,7 @@
 ### 核心特点
 
 - **极致低延迟**：总延迟约 **12ms**（采集 5ms + 推理 5ms + 控制 2ms）
-- **TensorRT 加速**：YOLOv8-Pose 模型推理仅需 **~5ms**
+- **TensorRT 加速**：YOLOv8L-Pose 模型推理仅需 **~5ms**
 - **双机架构**：运算与游戏分离，游戏机零性能损耗
 - **KmBox 硬件控制**：UDP 网络通信 + USB HID 模拟，支持贝塞尔曲线
 
@@ -54,7 +54,7 @@
 | 环节 | 延迟 | 说明 |
 |------|------|------|
 | 采集卡 | ~5ms | Pro Capture @ 2K 144Hz 低延迟模式 |
-| 图像推理 | ~5ms | TensorRT + YOLOv8-Pose |
+| 图像推理 | ~5ms | TensorRT + YOLOv8L-Pose |
 | KmBox | ~2ms | UDP 网络 + USB HID |
 | **总延迟** | **~12ms** | 端到端延迟 |
 
@@ -157,6 +157,10 @@ DualPC-TensorRT-Aim-KMBOX/
 - ♻️ **对象复用**：LockResult、PartInfo 缓存复用，零 GC 压力
 - 🚀 **栈分配优化**：阈值数组使用 stackalloc，避免堆分配
 - 📉 **代码精简**：移除冗余代码，减少 500+ 行
+
+#### 鼠标移动优化
+- 🎯 **FOV 转换**：新增 atan2 非线性转换算法，接近目标时精细移动，远离时快速追踪
+- 🔀 **双模式切换**：UI 开关实时切换线性/FOV转换，方便对比测试
 
 ### v3.0 (TensorRT 加速版)
 - 🚀 **TensorRT 加速**：推理延迟从 ~15ms 降至 ~5ms

@@ -17,6 +17,9 @@ namespace gprs
         // === 调试模式 ===
         private bool _debugMode = false;
 
+        // === FOV转换开关 ===
+        private bool _useFovConvert = false;
+
         // === 灵敏度配置 ===
         private int _xSensitivity;
         private int _ySensitivity;
@@ -181,8 +184,19 @@ namespace gprs
 
         private void ExecuteFireAction(int fireMode, int targetX, int targetY)
         {
-            int mouseX = (targetX - GameConfig.CaptureWidth / 2) * _xSensitivity / 100;
-            int mouseY = (targetY - GameConfig.CaptureHeight / 2) * _ySensitivity / 100;
+            int mouseX, mouseY;
+
+            if (_useFovConvert)
+            {
+                // FOV非线性转换
+                (mouseX, mouseY) = CalculateFovMove(targetX, targetY);
+            }
+            else
+            {
+                // 线性计算（旧方式）
+                mouseX = (targetX - GameConfig.CaptureWidth / 2) * _xSensitivity / 100;
+                mouseY = (targetY - GameConfig.CaptureHeight / 2) * _ySensitivity / 100;
+            }
 
             if (fireMode == (int)GameConfig.FireMode.Sniper)
             {
@@ -213,6 +227,49 @@ namespace gprs
                 _mouseActionCount++;
                 Thread.Sleep(150);
             }
+        }
+
+        /// <summary>
+        /// FOV非线性转换：使用 atan2 将像素偏移转换为鼠标移动量
+        /// 
+        /// 算法原理：
+        /// 1. 计算目标相对于屏幕中心的像素偏移 (dx, dy)
+        /// 2. 使用 atan2 产生非线性映射：
+        ///    - 目标接近中心时 -> atan2 线性近似 -> 精细移动
+        ///    - 目标远离中心时 -> atan2 趋于饱和 -> 快速移动
+        /// 3. 垂直轴考虑了水平偏移的影响（球面修正）
+        /// 
+        /// 效果：让瞄准在接近目标时更稳定，远离目标时更快追踪
+        /// </summary>
+        private (int mx, int my) CalculateFovMove(int targetX, int targetY)
+        {
+            // === Step 1: 计算目标相对于屏幕中心的像素偏移 ===
+            // 屏幕中心是 (320, 320)，目标在右边则 dx > 0，在下边则 dy > 0
+            float dx = targetX - GameConfig.CaptureWidth / 2f;   // 水平偏移（像素）
+            float dy = targetY - GameConfig.CaptureHeight / 2f;  // 垂直偏移（像素）
+
+            // === Step 2: 计算角度转换因子 R ===
+            // R = Sensitivity / (2 * PI)
+            // R 越大 -> 同样像素偏移产生的鼠标移动越小（灵敏度越低）
+            // R 越小 -> 同样像素偏移产生的鼠标移动越大（灵敏度越高）
+            // 当前 Sensitivity = 5140，R ≈ 818
+            float R = GameConfig.FovConfig.Sensitivity / 2f / MathF.PI;
+
+            // === Step 3: 水平轴鼠标移动量 ===
+            // atan2(dx, R) 返回弧度，范围 (-PI, PI)
+            // 乘以 R 转换为鼠标像素
+            // 当 dx 很小时：atan2(dx, R) ≈ dx/R，所以 mx ≈ dx（线性）
+            // 当 dx 很大时：atan2 趋于 PI/2，mx 趋于 R*PI/2 ≈ 1286（饱和）
+            float mx = MathF.Atan2(dx, R) * R;
+
+            // === Step 4: 垂直轴鼠标移动量（带球面修正） ===
+            // 垂直轴使用 sqrt(dx² + R²) 作为基准，而不是简单的 R
+            // 这样当水平偏移大时，垂直移动会略微减少（模拟球面投影）
+            // 避免“对角线方向移动过快”的问题
+            float my = MathF.Atan2(dy, MathF.Sqrt(dx * dx + R * R)) * R;
+
+            // === Step 5: 返回整数鼠标移动量 ===
+            return ((int)mx, (int)my);
         }
 
         private void UpdateDebugDisplay()
@@ -353,6 +410,11 @@ namespace gprs
         private void chkDebugMode_CheckedChanged(object sender, EventArgs e)
         {
             _debugMode = chkDebugMode.Checked;
+        }
+
+        private void chkFovConvert_CheckedChanged(object sender, EventArgs e)
+        {
+            _useFovConvert = chkFovConvert.Checked;
         }
 
         #endregion

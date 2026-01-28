@@ -1,4 +1,4 @@
-﻿﻿﻿﻿
+﻿﻿﻿
 namespace gprs
 {
     partial class Form1
@@ -50,6 +50,7 @@ namespace gprs
             folderBrowserDialog1 = new System.Windows.Forms.FolderBrowserDialog();
             folderBrowserDialog2 = new System.Windows.Forms.FolderBrowserDialog();
             chkDebugMode = new System.Windows.Forms.CheckBox();
+            chkFovConvert = new System.Windows.Forms.CheckBox();
             lblDebugInfo = new System.Windows.Forms.Label();
             ((System.ComponentModel.ISupportInitialize)pictureBox1).BeginInit();
             groupBox1.SuspendLayout();
@@ -61,7 +62,7 @@ namespace gprs
             textBox1.Font = new System.Drawing.Font("Microsoft YaHei UI", 16F);
             textBox1.Location = new System.Drawing.Point(97, 712);
             textBox1.Name = "textBox1";
-            textBox1.Size = new System.Drawing.Size(544, 35);
+            textBox1.Size = new System.Drawing.Size(407, 35);
             textBox1.TabIndex = 1;
             // 
             // pictureBox1
@@ -223,6 +224,17 @@ namespace gprs
             chkDebugMode.UseVisualStyleBackColor = true;
             chkDebugMode.CheckedChanged += chkDebugMode_CheckedChanged;
             // 
+            // chkFovConvert
+            // 
+            chkFovConvert.AutoSize = true;
+            chkFovConvert.Location = new System.Drawing.Point(542, 723);
+            chkFovConvert.Name = "chkFovConvert";
+            chkFovConvert.Size = new System.Drawing.Size(75, 21);
+            chkFovConvert.TabIndex = 16;
+            chkFovConvert.Text = "FOV转换";
+            chkFovConvert.UseVisualStyleBackColor = true;
+            chkFovConvert.CheckedChanged += chkFovConvert_CheckedChanged;
+            // 
             // lblDebugInfo
             // 
             lblDebugInfo.AutoSize = true;
@@ -238,6 +250,7 @@ namespace gprs
             AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             ClientSize = new System.Drawing.Size(646, 793);
             Controls.Add(lblDebugInfo);
+            Controls.Add(chkFovConvert);
             Controls.Add(chkDebugMode);
             Controls.Add(groupBox4);
             Controls.Add(groupBox1);
@@ -276,6 +289,7 @@ namespace gprs
         private System.Windows.Forms.RadioButton radioButton2;
         private System.Windows.Forms.RadioButton radioButton3;
         private System.Windows.Forms.CheckBox chkDebugMode;
+        private System.Windows.Forms.CheckBox chkFovConvert;
         private System.Windows.Forms.Label lblDebugInfo;
 
     }

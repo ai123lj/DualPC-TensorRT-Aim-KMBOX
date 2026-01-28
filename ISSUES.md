@@ -91,32 +91,58 @@ BodyFallbackOrder = { 胸, 双肩中点, 双髋中点, ... , 框中心 }
 
 ## ISSUE-002: FOV转换功能
 
-**状态**: 待实现  
+**状态**: ✅ 已完成  
 **发现日期**: 2025-01-XX  
+**完成日期**: 2025-01-XX  
 **影响范围**: 鼠标移动计算
 
-### 问题描述
+### 原问题描述
 
 当前鼠标移动计算未考虑 FOV（视场角）转换，导致：
 - 不同游戏/分辨率下的准心移动精度不一致
 - 需要手动调整灵敏度参数
 
-### 待实现内容
+### 实现方案
 
-1. 根据游戏 FOV 和分辨率计算像素到角度的转换系数
-2. 将屏幕像素偏移转换为游戏内角度偏移
-3. 再根据灵敏度转换为鼠标移动量
+#### 算法原理
 
-### 参考公式
+使用 `atan2` 产生非线性映射：
+- 目标接近中心时 → 精细移动（atan2 线性近似）
+- 目标远离中心时 → 快速移动（atan2 趋于饱和）
 
+#### 核心公式
+
+```csharp
+// 计算转换因子
+float R = Sensitivity / 2f / MathF.PI;  // R ≈ 818 (Sensitivity=5140)
+
+// 水平轴：标准 atan2 转换
+float mx = MathF.Atan2(dx, R) * R;
+
+// 垂直轴：带球面修正（避免对角线过快）
+float my = MathF.Atan2(dy, MathF.Sqrt(dx * dx + R * R)) * R;
 ```
-水平角度 = atan(像素偏移 / (屏幕宽度/2) * tan(FOV/2))
-鼠标移动 = 角度偏移 * 灵敏度系数
+
+#### UI 开关
+
+- 新增 `chkFovConvert` CheckBox
+- 勾选 → 使用 FOV 非线性转换
+- 不勾选 → 使用旧的线性计算
+
+#### 配置参数
+
+```csharp
+// GameConfig.cs
+public static class FovConfig
+{
+    public const float Sensitivity = 5140f;  // 需要游戏内校准
+}
 ```
 
 ### 相关文件
-- `Form1.cs` - Yolo 函数中的 mouseXMove/mouseYMove 计算
-- `Utils/GameConfig.cs` - 灵敏度配置
+- `Form1.cs` - `CalculateFovMove()` 函数、`ExecuteFireAction()` 分支逻辑
+- `Form1.Designer.cs` - `chkFovConvert` UI 控件
+- `Utils/GameConfig.cs` - `FovConfig.Sensitivity` 配置
 
 ---
 

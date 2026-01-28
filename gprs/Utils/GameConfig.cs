@@ -83,5 +83,17 @@ namespace gprs
             public const int GAME3_Y = 125;
         }
         #endregion
+
+        #region FOV转换配置
+        /// <summary>
+        /// FOV 角度转换配置
+        /// 用于将像素偏移转换为鼠标移动量（非线性）
+        /// </summary>
+        public static class FovConfig
+        {
+            /// <summary>FOV灵敏度系数（需要游戏内校准，5140是参考值）</summary>
+            public const float Sensitivity = 5140f;
+        }
+        #endregion
     }
 }
