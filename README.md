@@ -1,6 +1,6 @@
-# DualPC-TensorRT-Aim-MWCapture
+# DualPC-TensorRT-Aim-KMBOX
 
-基于双机架构的 TensorRT 加速 AI 视觉瞴准系统（美乐威采集卡版）
+基于双机架构的 TensorRT 加速 AI 视觉瞴准系统（KmBox + 美乐威采集卡版）
 
 ## 项目概述
 
@@ -118,7 +118,7 @@ trtyolo export -w yolov8l-pose.pt -v yolov8 -o ./models --fp16
 ## 项目结构
 
 ```
-DualPC-TensorRT-Aim-MWCapture/
+DualPC-TensorRT-Aim-KMBOX/
 ├── gprs/                       # 主程序
 │   ├── Form1.cs                # 主窗口逻辑
 │   ├── MWCapture/              # 美乐威采集卡 SDK 封装
@@ -138,7 +138,7 @@ DualPC-TensorRT-Aim-MWCapture/
 
 ## 版本更新
 
-### v4.0 (美乐威采集卡版)
+### v4.0 (KmBox + 美乐威采集卡版)
 
 #### 目标选择架构重构
 - 🎯 **23 部位系统**：17 原始姿态点 + 5 组合部位 + 1 兜底
