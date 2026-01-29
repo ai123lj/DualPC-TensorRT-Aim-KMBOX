@@ -187,41 +187,220 @@ public static class FovConfig
 
 ## ISSUE-004: 步枪开枪触发方式优化
 
-**状态**: 延时公式待调试  
+**状态**: ✅ 已完成（准心识别方案）  
 **发现日期**: 2025-01-XX  
+**完成日期**: 2025-01-XX  
 **影响范围**: 射击模式触发逻辑
 
-### 已实现内容
+### 实现方案
 
-**触发方式**: 左键按下触发（红点优先）
+#### 准心识别双模式切换
 
-**模式优先级**:
+通过检测屏幕中心2x2区域的像素颜色来区分武器类型：
+
+| 准心类型 | 检测公式 | 阈值 | 触发方式 |
+|---------|---------|------|----------|
+| 狙击准心（纯红） | `R - (G+B)/2` | > 253 | 自动触发 |
+| 步枪准心（黄色） | `(R+G)/2 - B` | > 253 | 右键/侧键 |
+
+#### 模式优先级
+
 ```
-红点(狙击) > 左键(步枪) > 侧键(点射)
+狙击准心（红色） > 步枪准心+右键 > 步枪准心+侧键
 ```
 
-**实现逻辑**:
-- 步枪模式使用 `Trace(2, 80)` 开启贝塞尔实时曲线
-- 狙击/点射模式使用 `Trace(0, 0)` 关闭曲线，直接移动
-- 步枪模式只移动不开枪，用户自己开枪
+#### 实现逻辑
 
-### 待调试: 延时公式
-
-**当前公式** (`GameConfig.RifleConfig`):
 ```csharp
-// 基准: 50ms 对应距离 226 (≈√(160²+160²))
-BaseDelayMs = 50
-BaseDistance = 226.0
+// ImageHelper.CrosshairInfo 结构体
+SnipeEnabled   // 狙击准心（纯红）
+MaxRedness     // 最大红色度
+ReddestX/Y     // 最红点坐标
 
-// 计算: delay = 50 * (distance / 226)
-// 最小 10ms
+RifleEnabled   // 步枪准心（黄色）
+MaxYellowness  // 最大黄色度
+YellowestX/Y   // 最黄点坐标
+
+// Form1.cs 触发逻辑
+if (crosshair.SnipeEnabled)           // 狙击模式
+else if (crosshair.RifleEnabled && 右键) // 步枪模式
+else if (crosshair.RifleEnabled && 侧键) // 点射模式
 ```
 
-**待测试确认**:
-- [ ] 距离较短时延时是否合理
-- [ ] 距离较长时延时是否足够
-- [ ] 公式系数是否需要调整
+#### 使用方式
+
+- **步枪**: 游戏内设置黄色准心 `(255,255,0)`，按住右键瞄准
+- **狙击**: 右键开镜，检测到红色狙击镜准心自动触发
+- **点射**: 黄色准心下按侧键
 
 ### 相关文件
-- `Form1.cs` - `ProcessYoloFrame()`, `ExecuteFireAction()`
-- `Utils/GameConfig.cs` - `FireMode.Rifle`, `RifleConfig`
+- `YoloProcessing/ImageHelper.cs` - `CrosshairInfo` 结构体、`ReadGameCrosshairInfo()` 检测逻辑
+- `Form1.cs` - `ProcessYoloFrame()` 触发分支
+- `KmBox/KmBoxNet.cs` - `MaskAll()` 一键屏蔽功能
+
+---
+
+## ISSUE-005: 轨迹测试与步枪使用优化
+
+**状态**: ✅ 已完成（准心识别方案）  
+**发现日期**: 2025-01-XX  
+**完成日期**: 2025-01-XX  
+**影响范围**: 鼠标移动轨迹、射击模式触发逻辑
+
+### 原问题描述
+
+| 触发方式 | 优点 | 缺点 |
+|---------|------|------|
+| 左键开枪 | 操作自然 | 锁定慢，跟不上敌人移动 |
+| 侧键开枪 | 锁定又准又快 | 侧键不方便按 |
+
+**核心矛盾**: 狙击和步枪都用右键会冲突
+
+### 解决方案
+
+通过识别游戏内准心颜色来区分武器类型：
+
+- **狙击枪**: 不开镜时无准心，开镜后有纯红准心
+- **步枪**: 用户自定义准心（设置为黄色）
+
+```
+检测逻辑：
+屏幕中心2x2像素
+    │
+    ├─ 检测到纯红 → 狙击模式（自动触发）
+    ├─ 检测到黄色 + 右键 → 步枪模式
+    └─ 检测到黄色 + 侧键 → 点射模式
+```
+
+### 实现细节
+
+详见 ISSUE-004。
+
+### 待测试内容
+
+- [ ] 轨迹测试：使用软件观察鼠标移动轨迹
+- [ ] 黄色准心阈值微调
+- [ ] 步枪延时公式优化
+
+### 相关文件
+- `YoloProcessing/ImageHelper.cs` - 准心检测
+- `Form1.cs` - 触发逻辑
+- `KmBox/KmBoxNet.cs` - `MaskAll()` 屏蔽功能
+
+---
+
+## ISSUE-006: Sticky Aim（粘性瞄准）
+
+**状态**: 待实现  
+**发现日期**: 2025-01-28  
+**影响范围**: 目标选择逻辑  
+**参考来源**: Aimmy 项目
+
+### 问题描述
+
+多人场景下，目标可能在相邻帧之间抖动切换，导致准心来回跳动。
+
+### 解决方案
+
+引入“锁定分数”机制，持续锁定同一目标：
+
+```csharp
+// 核心逻辑
+1. 记录当前锁定目标 _lastTarget
+2. 新帧检测到多个目标时，优先匹配上一帧的目标
+3. 匹配成功 → 分数增加，继续锁定
+4. 匹配失败 → 分数衰减，分数归零才切换目标
+```
+
+### 按需推理适配
+
+我们项目是按需推理（准心+按键才触发），需要额外处理：
+
+```csharp
+private static DateTime _lastInferTime;
+private const int STICKY_TIMEOUT_MS = 500;  // 超时重置
+
+// 如果两次推理间隔 > 500ms，重置粘性状态
+if ((DateTime.Now - _lastInferTime).TotalMilliseconds > STICKY_TIMEOUT_MS)
+{
+    ResetStickyState();
+}
+_lastInferTime = DateTime.Now;
+```
+
+### 实现要点
+
+| 参数 | 值 | 说明 |
+|------|-----|------|
+| MAX_FRAMES_WITHOUT_TARGET | 3 | 允许丢失帧数 |
+| LOCK_SCORE_DECAY | 0.85 | 每帧衰减系数 |
+| LOCK_SCORE_GAIN | 15 | 每帧增益 |
+| STICKY_TIMEOUT_MS | 500 | 超时重置时间 |
+
+### 相关文件
+- `YoloProcessing/TargetSelector.cs` - 添加粘性逻辑
+- `参考项目分析.md` - 详细实现方案
+
+---
+
+## ISSUE-007: 位置预测（EMA速度预测）
+
+**状态**: 待实现  
+**发现日期**: 2025-01-28  
+**影响范围**: 移动目标跟踪  
+**参考来源**: Aimmy 项目 (WiseTheFoxPrediction)
+
+### 问题描述
+
+对于移动中的目标，锁定当前位置会有延迟，导致打不准。
+
+### 解决方案
+
+使用 EMA（指数移动平均）计算目标速度，预测未来位置：
+
+```csharp
+// EMA 平滑位置
+_emaX = ALPHA * rawX + (1 - ALPHA) * _emaX;
+
+// 计算速度
+float newVelX = (_emaX - _prevX) / dt;
+_velocityX = ALPHA * newVelX + (1 - ALPHA) * _velocityX;
+
+// 预测未来位置
+predictedX = _emaX + _velocityX * leadTime;
+```
+
+### 按需推理适配
+
+我们项目不是一直推理，预测只在特定场景有效：
+
+| 场景 | 是否适用 | 原因 |
+|------|---------|------|
+| 步枪扫射 | ✅ 适用 | 按住右键连续推理，有足够采样点 |
+| 点射连发 | ⚠️ 部分 | 采样点少，预测不准 |
+| 狙击单发 | ❌ 不适用 | 无历史数据，无法预测 |
+
+```csharp
+// 只在步枪模式且连续推理时启用
+if (fireMode == FireMode.Rifle && _consecutiveFrames >= 3)
+{
+    (targetX, targetY) = GetPredictedPosition(rawX, rawY, leadTime);
+}
+else
+{
+    (targetX, targetY) = (rawX, rawY);  // 直接使用当前位置
+}
+```
+
+### 实现要点
+
+| 参数 | 值 | 说明 |
+|------|-----|------|
+| ALPHA | 0.5 | EMA 平滑系数 |
+| leadTime | 0.05~0.1s | 预测提前量，需测试调整 |
+| MIN_FRAMES | 3 | 最少连续帧数才启用预测 |
+
+### 相关文件
+- `YoloProcessing/TargetSelector.cs` - 添加预测逻辑
+- `Form1.cs` - 传入 fireMode 参数
+- `参考项目分析.md` - 详细实现方案

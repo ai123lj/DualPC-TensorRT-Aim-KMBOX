@@ -40,17 +40,16 @@ namespace gprs
         public const int LEFT_ANKLE = 15;
         public const int RIGHT_ANKLE = 16;
 
-        // === 组合部位 (17-21) ===
-        public const int FOREHEAD_1 = 17;      // 额头1：X双耳中间，Y=(鼻子+框顶)/2
-        public const int FOREHEAD_2 = 18;      // 额头2：X双耳中间，Y=(双耳+框顶)/2 偏框顶
-        public const int SHOULDER_CENTER = 19; // 双肩中点
-        public const int CHEST = 20;           // 胸（肩髋之间）
-        public const int HIP_CENTER = 21;      // 双髋中点
-
-        // === 兜底 (22) ===
-        public const int BOX_CENTER = 22;      // 框中心
-
-        public const int COUNT = 23;
+        // === 组合部位 (17-20) ===
+        public const int FOREHEAD = 17;         // 额头：X双耳中间，Y偏框顶
+        public const int SHOULDER_CENTER = 18;  // 双肩中点
+        public const int CHEST = 19;            // 胸（肩髈之间）
+        public const int HIP_CENTER = 20;       // 双髈中点
+        
+        // === 兖底 (21) ===
+        public const int BOX_CENTER = 21;       // 框中心
+        
+        public const int COUNT = 22;
     }
 
     /// <summary>
@@ -100,7 +99,7 @@ namespace gprs
         /// </summary>
         public static readonly int[] HeadFallbackOrder =
         {
-            PartIndex.FOREHEAD_1, PartIndex.FOREHEAD_2, PartIndex.NOSE,
+            PartIndex.FOREHEAD, PartIndex.NOSE,
             PartIndex.LEFT_EYE, PartIndex.RIGHT_EYE, PartIndex.LEFT_EAR, PartIndex.RIGHT_EAR,
             PartIndex.SHOULDER_CENTER, PartIndex.LEFT_SHOULDER, PartIndex.RIGHT_SHOULDER,
             PartIndex.CHEST, PartIndex.HIP_CENTER, PartIndex.LEFT_HIP, PartIndex.RIGHT_HIP,
@@ -116,7 +115,7 @@ namespace gprs
         {
             PartIndex.CHEST, PartIndex.SHOULDER_CENTER, PartIndex.HIP_CENTER,
             PartIndex.LEFT_SHOULDER, PartIndex.RIGHT_SHOULDER, PartIndex.LEFT_HIP, PartIndex.RIGHT_HIP,
-            PartIndex.FOREHEAD_1, PartIndex.FOREHEAD_2, PartIndex.NOSE,
+            PartIndex.FOREHEAD, PartIndex.NOSE,
             PartIndex.LEFT_EAR, PartIndex.RIGHT_EAR, PartIndex.LEFT_EYE, PartIndex.RIGHT_EYE,
             PartIndex.LEFT_KNEE, PartIndex.RIGHT_KNEE, PartIndex.LEFT_ANKLE, PartIndex.RIGHT_ANKLE,
             PartIndex.LEFT_ELBOW, PartIndex.RIGHT_ELBOW, PartIndex.LEFT_WRIST, PartIndex.RIGHT_WRIST,
@@ -487,36 +486,78 @@ namespace gprs
 
             // ==================== 组合部位 ====================
 
-            // === 额头1：X=双耳中间，Y=(鼻子Y + 框顶Y)/2 ===
+            // === 额头：X=头部中心，Y=最佳头部点与框顶加权 ===
             {
-                const float TH_LEFT_EAR = 0.6f;   // 额头1 - 左耳阈值
-                const float TH_RIGHT_EAR = 0.6f;  // 额头1 - 右耳阈值
-                const float TH_NOSE = 0.6f;       // 额头1 - 鼻子阈值
-
-                if (pose[KP_LEFT_EAR].Confidence > TH_LEFT_EAR &&
-                    pose[KP_RIGHT_EAR].Confidence > TH_RIGHT_EAR &&
-                    pose[KP_NOSE].Confidence > TH_NOSE)
+                const float TH = 0.6f;  // 头部关键点阈值
+                
+                int sumX = 0, count = 0;
+                int bestY = 0;
+                float bestConf = 0;
+                float sumConf = 0;
+                
+                // 收集所有可用的头部关键点
+                if (pose[KP_NOSE].Confidence > TH)
                 {
-                    int x = (pose[KP_LEFT_EAR].Point.X + pose[KP_RIGHT_EAR].Point.X) / 2;
-                    int y = (pose[KP_NOSE].Point.Y + bounds.Y) / 2;
-                    float conf = (pose[KP_LEFT_EAR].Confidence + pose[KP_RIGHT_EAR].Confidence + pose[KP_NOSE].Confidence) / 3;
-                    parts[PartIndex.FOREHEAD_1] = new PartInfo { IsValid = true, X = x, Y = y, Confidence = conf };
+                    sumX += pose[KP_NOSE].Point.X;
+                    sumConf += pose[KP_NOSE].Confidence;
+                    count++;
+                    if (pose[KP_NOSE].Confidence > bestConf)
+                    {
+                        bestConf = pose[KP_NOSE].Confidence;
+                        bestY = pose[KP_NOSE].Point.Y;
+                    }
                 }
-            }
-
-            // === 额头2：X=双耳中间，Y=(双耳Y + 框顶Y)/2，偏向框顶 ===
-            {
-                const float TH_LEFT_EAR = 0.6f;   // 额头2 - 左耳阈值
-                const float TH_RIGHT_EAR = 0.6f;  // 额头2 - 右耳阈值
-
-                if (pose[KP_LEFT_EAR].Confidence > TH_LEFT_EAR &&
-                    pose[KP_RIGHT_EAR].Confidence > TH_RIGHT_EAR)
+                if (pose[KP_LEFT_EYE].Confidence > TH)
                 {
-                    int x = (pose[KP_LEFT_EAR].Point.X + pose[KP_RIGHT_EAR].Point.X) / 2;
-                    int earsY = (pose[KP_LEFT_EAR].Point.Y + pose[KP_RIGHT_EAR].Point.Y) / 2;
-                    int y = (earsY + bounds.Y * 2) / 3;  // 偏向框顶
-                    float conf = (pose[KP_LEFT_EAR].Confidence + pose[KP_RIGHT_EAR].Confidence) / 2;
-                    parts[PartIndex.FOREHEAD_2] = new PartInfo { IsValid = true, X = x, Y = y, Confidence = conf };
+                    sumX += pose[KP_LEFT_EYE].Point.X;
+                    sumConf += pose[KP_LEFT_EYE].Confidence;
+                    count++;
+                    if (pose[KP_LEFT_EYE].Confidence > bestConf)
+                    {
+                        bestConf = pose[KP_LEFT_EYE].Confidence;
+                        bestY = pose[KP_LEFT_EYE].Point.Y;
+                    }
+                }
+                if (pose[KP_RIGHT_EYE].Confidence > TH)
+                {
+                    sumX += pose[KP_RIGHT_EYE].Point.X;
+                    sumConf += pose[KP_RIGHT_EYE].Confidence;
+                    count++;
+                    if (pose[KP_RIGHT_EYE].Confidence > bestConf)
+                    {
+                        bestConf = pose[KP_RIGHT_EYE].Confidence;
+                        bestY = pose[KP_RIGHT_EYE].Point.Y;
+                    }
+                }
+                if (pose[KP_LEFT_EAR].Confidence > TH)
+                {
+                    sumX += pose[KP_LEFT_EAR].Point.X;
+                    sumConf += pose[KP_LEFT_EAR].Confidence;
+                    count++;
+                    if (pose[KP_LEFT_EAR].Confidence > bestConf)
+                    {
+                        bestConf = pose[KP_LEFT_EAR].Confidence;
+                        bestY = pose[KP_LEFT_EAR].Point.Y;
+                    }
+                }
+                if (pose[KP_RIGHT_EAR].Confidence > TH)
+                {
+                    sumX += pose[KP_RIGHT_EAR].Point.X;
+                    sumConf += pose[KP_RIGHT_EAR].Confidence;
+                    count++;
+                    if (pose[KP_RIGHT_EAR].Confidence > bestConf)
+                    {
+                        bestConf = pose[KP_RIGHT_EAR].Confidence;
+                        bestY = pose[KP_RIGHT_EAR].Point.Y;
+                    }
+                }
+                
+                if (count > 0)
+                {
+                    int x = sumX / count;  // 头部中心X
+                    int y = (bestY*2 + bounds.Y * 3) / 5;  // 最佳点Y与框顶加权，偏向框顶
+                    float conf = sumConf / count;
+                    parts[PartIndex.FOREHEAD] = new PartInfo { IsValid = true, X = x, Y = y, Confidence = conf };
                 }
             }
 
@@ -665,8 +706,7 @@ namespace gprs
                 PartIndex.RIGHT_KNEE => "右膝",
                 PartIndex.LEFT_ANKLE => "左踝",
                 PartIndex.RIGHT_ANKLE => "右踝",
-                PartIndex.FOREHEAD_1 => "额头1",
-                PartIndex.FOREHEAD_2 => "额头2",
+                PartIndex.FOREHEAD => "额头",
                 PartIndex.SHOULDER_CENTER => "双肩中点",
                 PartIndex.CHEST => "胸",
                 PartIndex.HIP_CENTER => "双髋中点",

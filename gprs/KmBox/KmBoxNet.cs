@@ -372,6 +372,15 @@ namespace gprs.KmBox
         }
 
         /// <summary>
+        /// 一次性屏蔽所有（左键+右键+X轴+Y轴）
+        /// </summary>
+        public int MaskAll()
+        {
+            _maskFlag = 0x01 | 0x02 | 0x20 | 0x40;  // 左键 | 右键 | X轴 | Y轴
+            return SendMaskCommand();
+        }
+
+        /// <summary>
         /// 解除所有屏蔽
         /// </summary>
         public int UnmaskAll()

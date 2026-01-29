@@ -1,4 +1,4 @@
-﻿﻿﻿
+﻿﻿
 namespace gprs
 {
     partial class Form1
@@ -51,10 +51,12 @@ namespace gprs
             folderBrowserDialog2 = new System.Windows.Forms.FolderBrowserDialog();
             chkDebugMode = new System.Windows.Forms.CheckBox();
             chkFovConvert = new System.Windows.Forms.CheckBox();
+            numFovScale = new System.Windows.Forms.NumericUpDown();
             lblDebugInfo = new System.Windows.Forms.Label();
             ((System.ComponentModel.ISupportInitialize)pictureBox1).BeginInit();
             groupBox1.SuspendLayout();
             groupBox4.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)numFovScale).BeginInit();
             SuspendLayout();
             // 
             // textBox1
@@ -62,7 +64,7 @@ namespace gprs
             textBox1.Font = new System.Drawing.Font("Microsoft YaHei UI", 16F);
             textBox1.Location = new System.Drawing.Point(97, 712);
             textBox1.Name = "textBox1";
-            textBox1.Size = new System.Drawing.Size(407, 35);
+            textBox1.Size = new System.Drawing.Size(300, 35);
             textBox1.TabIndex = 1;
             // 
             // pictureBox1
@@ -227,13 +229,26 @@ namespace gprs
             // chkFovConvert
             // 
             chkFovConvert.AutoSize = true;
-            chkFovConvert.Location = new System.Drawing.Point(542, 723);
+            chkFovConvert.Location = new System.Drawing.Point(404, 722);
             chkFovConvert.Name = "chkFovConvert";
             chkFovConvert.Size = new System.Drawing.Size(75, 21);
             chkFovConvert.TabIndex = 16;
             chkFovConvert.Text = "FOV转换";
             chkFovConvert.UseVisualStyleBackColor = true;
             chkFovConvert.CheckedChanged += chkFovConvert_CheckedChanged;
+            // 
+            // numFovScale
+            // 
+            numFovScale.DecimalPlaces = 1;
+            numFovScale.Increment = new decimal(new int[] { 1, 0, 0, 65536 });
+            numFovScale.Location = new System.Drawing.Point(485, 720);
+            numFovScale.Maximum = new decimal(new int[] { 10, 0, 0, 0 });
+            numFovScale.Minimum = new decimal(new int[] { 1, 0, 0, 65536 });
+            numFovScale.Name = "numFovScale";
+            numFovScale.Size = new System.Drawing.Size(55, 23);
+            numFovScale.TabIndex = 17;
+            numFovScale.Value = new decimal(new int[] { 1, 0, 0, 0 });
+            numFovScale.ValueChanged += numFovScale_ValueChanged;
             // 
             // lblDebugInfo
             // 
@@ -250,6 +265,7 @@ namespace gprs
             AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             ClientSize = new System.Drawing.Size(646, 793);
             Controls.Add(lblDebugInfo);
+            Controls.Add(numFovScale);
             Controls.Add(chkFovConvert);
             Controls.Add(chkDebugMode);
             Controls.Add(groupBox4);
@@ -265,6 +281,7 @@ namespace gprs
             groupBox1.PerformLayout();
             groupBox4.ResumeLayout(false);
             groupBox4.PerformLayout();
+            ((System.ComponentModel.ISupportInitialize)numFovScale).EndInit();
             ResumeLayout(false);
             PerformLayout();
         }
@@ -290,6 +307,7 @@ namespace gprs
         private System.Windows.Forms.RadioButton radioButton3;
         private System.Windows.Forms.CheckBox chkDebugMode;
         private System.Windows.Forms.CheckBox chkFovConvert;
+        private System.Windows.Forms.NumericUpDown numFovScale;
         private System.Windows.Forms.Label lblDebugInfo;
 
     }

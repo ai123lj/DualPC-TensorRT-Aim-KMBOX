@@ -19,6 +19,7 @@ namespace gprs
 
         // === FOV转换开关 ===
         private bool _useFovConvert = false;
+        private float _fovScale = 1.0f;
 
         // === 灵敏度配置 ===
         private int _xSensitivity;
@@ -137,20 +138,20 @@ namespace gprs
                 if (_kmBox == null || !_kmBox.IsConnected)
                     return;
 
-                if (crosshair.SnipeEnabled)  // 红点优先
+                if (crosshair.SnipeEnabled)  // 狙击准心（红色）
                 {
                     fireMode = (int)GameConfig.FireMode.Sniper;
                     lockHead = false;  // 狙击锁身体
                     _kmBox.Trace(0, 0);  // 狙击模式：关闭曲线
                 }
-                else if (_kmBox.IsMouseLeftDown())  // 左键次优先
+                else if (crosshair.RifleEnabled && _kmBox.IsMouseRightDown())  // 步枪准心 + 右键
                 {
                     fireMode = (int)GameConfig.FireMode.Rifle;
                     lockHead = true;  // 步枪锁头
-                    _kmBox.Trace(GameConfig.RifleConfig.TraceType, GameConfig.RifleConfig.TraceSmooth);  // 步枪模式：开启贝塞尔曲线
+                    _kmBox.Trace(GameConfig.RifleConfig.TraceType, GameConfig.RifleConfig.TraceSmooth);
                     graphics.FillRectangle(GameConfig.MaskBrush, GameConfig.BurstMaskRect);
                 }
-                else if (_kmBox.IsMouseSide2Down())  // 侧键点射
+                else if (crosshair.RifleEnabled && _kmBox.IsMouseSide2Down())  // 步枪准心 + 侧键点射
                 {
                     fireMode = (int)GameConfig.FireMode.Burst;
                     lockHead = true;  // 点射锁头
@@ -178,8 +179,8 @@ namespace gprs
             }
 
             // 6. 执行射击
-            if (lockResult.HasTarget)
-                ExecuteFireAction(fireMode, lockResult.TargetX, lockResult.TargetY);
+            if (lockResult.HasTarget)             
+                ExecuteFireAction(fireMode, lockResult.TargetX, lockResult.TargetY);                         
         }
 
         private void ExecuteFireAction(int fireMode, int targetX, int targetY)
@@ -197,50 +198,50 @@ namespace gprs
                 mouseX = (targetX - GameConfig.CaptureWidth / 2) * _xSensitivity / 100;
                 mouseY = (targetY - GameConfig.CaptureHeight / 2) * _ySensitivity / 100;
             }
-
+            _kmBox.MaskAll();       
             if (fireMode == (int)GameConfig.FireMode.Sniper)
             {
-                _kmBox!.MouseMove(mouseX, mouseY);
+                _kmBox.MouseMove(mouseX, mouseY);
                 _kmBox.MouseLeft(true);
                 _kmBox.MouseLeft(false);
                 Thread.Sleep(35);
                 _kmBox.MouseWheel(-1);
                 _mouseActionCount++;
+                _kmBox.UnmaskAll();
                 Thread.Sleep(200);
             }
             else if (fireMode == (int)GameConfig.FireMode.Rifle)
             {
                 // 步枪模式：贝塞尔曲线移动，不开枪
-                _kmBox!.MouseMove(mouseX, mouseY);
-                _mouseActionCount++;
-                // 延时公式：delay = 基准延时 * (实际距离 / 基准距离)
-                double distance = Math.Sqrt(mouseX * mouseX + mouseY * mouseY);
-                int delay = (int)(GameConfig.RifleConfig.BaseDelayMs * distance / GameConfig.RifleConfig.BaseDistance);
-                delay = Math.Max(delay, 10);  // 最小 10ms
-                Thread.Sleep(delay);
-            }
-            else if (fireMode == (int)GameConfig.FireMode.Burst)
-            {
-                _kmBox!.MouseMove(mouseX, mouseY);
+                const int MaxMoveRange = 160;  // 最大移动范围，超出则不操作
+                if (Math.Abs(mouseX) > MaxMoveRange || Math.Abs(mouseY) > MaxMoveRange)
+                    return;
+
+                _kmBox.MouseMove(mouseX, mouseY);
                 _kmBox.MouseLeft(true);
                 _kmBox.MouseLeft(false);
                 _mouseActionCount++;
-                Thread.Sleep(150);
+                Thread.Sleep(10);
+                _kmBox.UnmaskAll();
+
+                // 延时公式：delay = max(|X|, |Y|) * 0.2，最小 10ms
+                //int maxMove = Math.Max(Math.Abs(mouseX), Math.Abs(mouseY));
+                //int delay = Math.Max((int)(maxMove * 0.2), 10);
+                //Thread.Sleep(delay);
+                Thread.Sleep(140);
+            }
+            else if (fireMode == (int)GameConfig.FireMode.Burst)
+            {
+                _kmBox.MouseMove(mouseX, mouseY);
+                _kmBox.MouseLeft(true);
+                _kmBox.MouseLeft(false);
+                _mouseActionCount++;
+                Thread.Sleep(10);
+                _kmBox.UnmaskAll();
+                Thread.Sleep(140);
             }
         }
 
-        /// <summary>
-        /// FOV非线性转换：使用 atan2 将像素偏移转换为鼠标移动量
-        /// 
-        /// 算法原理：
-        /// 1. 计算目标相对于屏幕中心的像素偏移 (dx, dy)
-        /// 2. 使用 atan2 产生非线性映射：
-        ///    - 目标接近中心时 -> atan2 线性近似 -> 精细移动
-        ///    - 目标远离中心时 -> atan2 趋于饱和 -> 快速移动
-        /// 3. 垂直轴考虑了水平偏移的影响（球面修正）
-        /// 
-        /// 效果：让瞄准在接近目标时更稳定，远离目标时更快追踪
-        /// </summary>
         private (int mx, int my) CalculateFovMove(int targetX, int targetY)
         {
             // === Step 1: 计算目标相对于屏幕中心的像素偏移 ===
@@ -268,8 +269,8 @@ namespace gprs
             // 避免“对角线方向移动过快”的问题
             float my = MathF.Atan2(dy, MathF.Sqrt(dx * dx + R * R)) * R;
 
-            // === Step 5: 返回整数鼠标移动量 ===
-            return ((int)mx, (int)my);
+            // === Step 5: 返回整数鼠标移动量（乘以缩放系数） ===
+            return ((int)(mx * _fovScale), (int)(my * _fovScale));
         }
 
         private void UpdateDebugDisplay()
@@ -415,6 +416,11 @@ namespace gprs
         private void chkFovConvert_CheckedChanged(object sender, EventArgs e)
         {
             _useFovConvert = chkFovConvert.Checked;
+        }
+
+        private void numFovScale_ValueChanged(object sender, EventArgs e)
+        {
+            _fovScale = (float)numFovScale.Value;
         }
 
         #endregion

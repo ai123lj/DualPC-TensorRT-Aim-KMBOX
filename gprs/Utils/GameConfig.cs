@@ -54,11 +54,6 @@ namespace gprs
             public const double BaseDistance = 226.0;
         }
 
-        // 注：锁定位置直接使用 TargetPart 常量，不再单独定义枚举
-        // TargetPart.HEAD = 0         // 头（鼻子）
-        // TargetPart.FOREHEAD = 1     // 额头
-        // TargetPart.CHEST_UPPER = 2  // 胸部靠上（双肩中点）
-        // TargetPart.CHEST = 3        // 胸（肩髋之间）
         #endregion
 
         #region 灵敏度配置
@@ -92,7 +87,7 @@ namespace gprs
         public static class FovConfig
         {
             /// <summary>FOV灵敏度系数（需要游戏内校准，5140是参考值）</summary>
-            public const float Sensitivity = 5140f;
+            public const float Sensitivity = 100f;
         }
         #endregion
     }
