@@ -17,10 +17,6 @@ namespace gprs
         // === 调试模式 ===
         private bool _debugMode = false;
 
-        // === FOV转换开关 ===
-        private bool _useFovConvert = false;
-        private float _fovScale = 1.0f;
-
         // === 灵敏度配置 ===
         private int _xSensitivity;
         private int _ySensitivity;
@@ -142,20 +138,17 @@ namespace gprs
                 {
                     fireMode = (int)GameConfig.FireMode.Sniper;
                     lockHead = false;  // 狙击锁身体
-                    _kmBox.Trace(0, 0);  // 狙击模式：关闭曲线
                 }
                 else if (crosshair.RifleEnabled && _kmBox.IsMouseRightDown())  // 步枪准心 + 右键
                 {
                     fireMode = (int)GameConfig.FireMode.Rifle;
                     lockHead = true;  // 步枪锁头
-                    _kmBox.Trace(GameConfig.RifleConfig.TraceType, GameConfig.RifleConfig.TraceSmooth);
                     graphics.FillRectangle(GameConfig.MaskBrush, GameConfig.BurstMaskRect);
                 }
                 else if (crosshair.RifleEnabled && _kmBox.IsMouseSide2Down())  // 步枪准心 + 侧键点射
                 {
                     fireMode = (int)GameConfig.FireMode.Burst;
                     lockHead = true;  // 点射锁头
-                    _kmBox.Trace(0, 0);
                     graphics.FillRectangle(GameConfig.MaskBrush, GameConfig.BurstMaskRect);
                 }
                 else
@@ -180,24 +173,19 @@ namespace gprs
 
             // 6. 执行射击
             if (lockResult.HasTarget)             
-                ExecuteFireAction(fireMode, lockResult.TargetX, lockResult.TargetY);                         
+                ExecuteFireAction(fireMode, lockResult.TargetX, lockResult.TargetY);     
+            else{
+                _kmBox.MouseLeft(true);
+                _kmBox.MouseLeft(false);  
+            }                    
         }
 
         private void ExecuteFireAction(int fireMode, int targetX, int targetY)
         {
-            int mouseX, mouseY;
+            // 线性计算鼠标移动量
+            int mouseX = (targetX - GameConfig.CaptureWidth / 2) * _xSensitivity / 100;
+            int mouseY = (targetY - GameConfig.CaptureHeight / 2) * _ySensitivity / 100;
 
-            if (_useFovConvert)
-            {
-                // FOV非线性转换
-                (mouseX, mouseY) = CalculateFovMove(targetX, targetY);
-            }
-            else
-            {
-                // 线性计算（旧方式）
-                mouseX = (targetX - GameConfig.CaptureWidth / 2) * _xSensitivity / 100;
-                mouseY = (targetY - GameConfig.CaptureHeight / 2) * _ySensitivity / 100;
-            }
             _kmBox.MaskAll();       
             if (fireMode == (int)GameConfig.FireMode.Sniper)
             {
@@ -212,10 +200,16 @@ namespace gprs
             }
             else if (fireMode == (int)GameConfig.FireMode.Rifle)
             {
-                // 步枪模式：贝塞尔曲线移动，不开枪
                 const int MaxMoveRange = 160;  // 最大移动范围，超出则不操作
-                if (Math.Abs(mouseX) > MaxMoveRange || Math.Abs(mouseY) > MaxMoveRange)
+                if (Math.Abs(mouseX) > MaxMoveRange || Math.Abs(mouseY) > MaxMoveRange){                                   
+                    _kmBox.MouseLeft(true);
+                    _kmBox.MouseLeft(false);
+                    Thread.Sleep(10);
+                    _kmBox.UnmaskAll();
+                    Thread.Sleep(140);
                     return;
+                }
+                    
 
                 _kmBox.MouseMove(mouseX, mouseY);
                 _kmBox.MouseLeft(true);
@@ -223,11 +217,6 @@ namespace gprs
                 _mouseActionCount++;
                 Thread.Sleep(10);
                 _kmBox.UnmaskAll();
-
-                // 延时公式：delay = max(|X|, |Y|) * 0.2，最小 10ms
-                //int maxMove = Math.Max(Math.Abs(mouseX), Math.Abs(mouseY));
-                //int delay = Math.Max((int)(maxMove * 0.2), 10);
-                //Thread.Sleep(delay);
                 Thread.Sleep(140);
             }
             else if (fireMode == (int)GameConfig.FireMode.Burst)
@@ -240,37 +229,6 @@ namespace gprs
                 _kmBox.UnmaskAll();
                 Thread.Sleep(140);
             }
-        }
-
-        private (int mx, int my) CalculateFovMove(int targetX, int targetY)
-        {
-            // === Step 1: 计算目标相对于屏幕中心的像素偏移 ===
-            // 屏幕中心是 (320, 320)，目标在右边则 dx > 0，在下边则 dy > 0
-            float dx = targetX - GameConfig.CaptureWidth / 2f;   // 水平偏移（像素）
-            float dy = targetY - GameConfig.CaptureHeight / 2f;  // 垂直偏移（像素）
-
-            // === Step 2: 计算角度转换因子 R ===
-            // R = Sensitivity / (2 * PI)
-            // R 越大 -> 同样像素偏移产生的鼠标移动越小（灵敏度越低）
-            // R 越小 -> 同样像素偏移产生的鼠标移动越大（灵敏度越高）
-            // 当前 Sensitivity = 5140，R ≈ 818
-            float R = GameConfig.FovConfig.Sensitivity / 2f / MathF.PI;
-
-            // === Step 3: 水平轴鼠标移动量 ===
-            // atan2(dx, R) 返回弧度，范围 (-PI, PI)
-            // 乘以 R 转换为鼠标像素
-            // 当 dx 很小时：atan2(dx, R) ≈ dx/R，所以 mx ≈ dx（线性）
-            // 当 dx 很大时：atan2 趋于 PI/2，mx 趋于 R*PI/2 ≈ 1286（饱和）
-            float mx = MathF.Atan2(dx, R) * R;
-
-            // === Step 4: 垂直轴鼠标移动量（带球面修正） ===
-            // 垂直轴使用 sqrt(dx² + R²) 作为基准，而不是简单的 R
-            // 这样当水平偏移大时，垂直移动会略微减少（模拟球面投影）
-            // 避免“对角线方向移动过快”的问题
-            float my = MathF.Atan2(dy, MathF.Sqrt(dx * dx + R * R)) * R;
-
-            // === Step 5: 返回整数鼠标移动量（乘以缩放系数） ===
-            return ((int)(mx * _fovScale), (int)(my * _fovScale));
         }
 
         private void UpdateDebugDisplay()
@@ -364,6 +322,8 @@ namespace gprs
                 _kmBox.HwMouseButtonChanged += OnKmBoxMouseButtonChanged;
                 _kmBox.HwKeyDown += OnKmBoxKeyDown;
                 _kmBox.MonitorEnable(9527);
+                _kmBox.UnmaskAll();
+                _kmBox.Trace(0, 0);
 
                 btnKmBoxConnect.Text = "断开";
                 lblKmBoxStatus.Text = "已连接";
@@ -411,16 +371,6 @@ namespace gprs
         private void chkDebugMode_CheckedChanged(object sender, EventArgs e)
         {
             _debugMode = chkDebugMode.Checked;
-        }
-
-        private void chkFovConvert_CheckedChanged(object sender, EventArgs e)
-        {
-            _useFovConvert = chkFovConvert.Checked;
-        }
-
-        private void numFovScale_ValueChanged(object sender, EventArgs e)
-        {
-            _fovScale = (float)numFovScale.Value;
         }
 
         #endregion

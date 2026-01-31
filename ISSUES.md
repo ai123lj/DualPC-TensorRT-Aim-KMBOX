@@ -343,6 +343,85 @@ _lastInferTime = DateTime.Now;
 
 ---
 
+## ISSUE-008: FOV转换功能移除
+
+**状态**: 待实现  
+**发现日期**: 2025-01-28  
+**影响范围**: 鼠标移动计算、UI
+
+### 问题描述
+
+FOV（atan2 球面投影）转换在当前游戏中完全不准，经分析游戏使用的是**透视投影**而非球面投影，数学模型不匹配。
+
+### 解决方案
+
+删除 FOV 相关代码和 UI，保留线性转换模式。
+
+### 待删除内容
+
+| 位置 | 内容 |
+|------|------|
+| `Form1.cs` | `CalculateFovMove()` 函数 |
+| `Form1.cs` | `_fovScale` 字段 |
+| `Form1.cs` | FOV 分支判断逻辑 |
+| `Form1.Designer.cs` | `chkFovConvert` CheckBox |
+| `GameConfig.cs` | `FovConfig` 配置类 |
+
+### 相关文件
+- `Form1.cs`
+- `Form1.Designer.cs`
+- `Utils/GameConfig.cs`
+
+---
+
+## ISSUE-009: 线性模式对角线修正
+
+**状态**: 待实现  
+**发现日期**: 2025-01-28  
+**影响范围**: 鼠标移动计算
+
+### 问题描述
+
+线性转换模式下：
+- X 单独移动：✅ 准确
+- Y 单独移动：✅ 准确
+- XY 同时大：❌ 移动量偏大
+
+**原因**：游戏使用透视投影，对角线方向实际角度比 X+Y 角度之和要小。
+
+### 解决方案
+
+添加对角线修正，将"直角边之和"缩放为"斜边长度"：
+
+```csharp
+// 1. 先按线性计算
+float mx = dx * _xSensitivity / 100f;
+float my = dy * _ySensitivity / 100f;
+
+// 2. 对角线修正
+float linear = MathF.Abs(mx) + MathF.Abs(my);
+float diagonal = MathF.Sqrt(mx * mx + my * my);
+if (linear > 0.1f)
+{
+    float scale = diagonal / linear;
+    mx *= scale;
+    my *= scale;
+}
+```
+
+### 修正效果
+
+| 情况 | scale | 效果 |
+|------|-------|------|
+| 纯水平/垂直 | 1.0 | 不变 |
+| 45°对角 | 0.71 | 缩小29% |
+| 小角度斜向 | 0.85 | 缩小15% |
+
+### 相关文件
+- `Form1.cs` - 修改鼠标移动计算逻辑
+
+---
+
 ## ISSUE-007: 位置预测（EMA速度预测）
 
 **状态**: 待实现  

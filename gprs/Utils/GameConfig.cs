@@ -39,20 +39,6 @@ namespace gprs
             Rifle = 3    // 步枪模式：贝塞尔曲线移动，不开枪
         }
 
-        /// <summary>
-        /// 步枪模式配置
-        /// </summary>
-        public static class RifleConfig
-        {
-            /// <summary>Trace 算法类型: 2=贝塞尔实时</summary>
-            public const int TraceType = 2;
-            /// <summary>Trace 平滑度参数</summary>
-            public const int TraceSmooth = 80;
-            /// <summary>基准延时(ms)，对应移动距离 ~226 (√(160²+160²))</summary>
-            public const int BaseDelayMs = 50;
-            /// <summary>基准距离</summary>
-            public const double BaseDistance = 226.0;
-        }
 
         #endregion
 
@@ -76,18 +62,6 @@ namespace gprs
             // 游戏3 (待确认具体游戏名)
             public const int GAME3_X = 120;
             public const int GAME3_Y = 125;
-        }
-        #endregion
-
-        #region FOV转换配置
-        /// <summary>
-        /// FOV 角度转换配置
-        /// 用于将像素偏移转换为鼠标移动量（非线性）
-        /// </summary>
-        public static class FovConfig
-        {
-            /// <summary>FOV灵敏度系数（需要游戏内校准，5140是参考值）</summary>
-            public const float Sensitivity = 100f;
         }
         #endregion
     }
