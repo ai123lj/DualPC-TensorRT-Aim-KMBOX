@@ -59,6 +59,7 @@ namespace gprs
     {
         public bool HasTarget;
         public int TargetX, TargetY;
+        public Rectangle TargetBounds;  // 选中目标的检测框（微自瞄判断准心是否在框内）
 
         // 调试信息
         public int SelectedTargetId;
@@ -225,6 +226,7 @@ namespace gprs
             // === 步骤3: 收集选中目标的所有部位 ===
             var selectedPose = result[lockResult.SelectedTargetId];
             var selectedBounds = selectedPose.Bounds;
+            lockResult.TargetBounds = selectedBounds;
             var parts = _partsCache[lockResult.SelectedTargetId];
 
             CalculateAllParts(selectedPose, selectedBounds, parts);

@@ -153,7 +153,7 @@ namespace gprs.KmBox
         /// </summary>
         public int MouseMove(int x, int y)
         {
-            var data = BuildMouseData(0, x, y, 0);
+            var data = BuildMouseData(_mouseButton, x, y, 0);
             return SendCommand(CMD_MOUSE_MOVE, data);
         }
 
@@ -354,6 +354,24 @@ namespace gprs.KmBox
         }
 
         /// <summary>
+        /// 屏蔽鼠标侧键1
+        /// </summary>
+        public int MaskMouseSide1(bool enable)
+        {
+            _maskFlag = enable ? (_maskFlag | 0x08) : (_maskFlag & ~0x08);
+            return SendMaskCommand();
+        }
+
+        /// <summary>
+        /// 屏蔽鼠标侧键2
+        /// </summary>
+        public int MaskMouseSide2(bool enable)
+        {
+            _maskFlag = enable ? (_maskFlag | 0x10) : (_maskFlag & ~0x10);
+            return SendMaskCommand();
+        }
+
+        /// <summary>
         /// 屏蔽鼠标X轴移动
         /// </summary>
         public int MaskMouseX(bool enable)
@@ -419,6 +437,137 @@ namespace gprs.KmBox
             BitConverter.GetBytes(y2).CopyTo(data, 28); // point[3]
 
             return SendCommandWithRand(CMD_BAZER_MOVE, data, (uint)ms);
+        }
+
+        /// <summary>
+        /// 类人鼠标轨迹移动（模拟人类操作特征）
+        /// 通过贝塞尔曲线 + 多种人类行为特征模拟，生成更自然的鼠标轨迹
+        /// 
+        /// 【时间计算公式】
+        /// 步数 = 距离 × 平滑度，时间 ≈ 步数 × 1ms
+        /// 例如：100px × smoothness=1.0 = 100步 ≈ 100ms
+        /// 
+        /// 【smoothness平滑度参数说明】
+        /// - 0.5: 快速移动，轨迹较粗
+        /// - 1.0: 标准速度（默认）
+        /// - 2.0: 慢速移动，轨迹细腻
+        /// 
+        /// 【easingPower加速度参数说明】
+        /// - 1.0: 线性移动（无加减速）
+        /// - 1.5: 加速平缓
+        /// - 2.0: 标准二次曲线（默认）
+        /// - 3.0: 加速剧烈
+        /// - 4.0: 非常剧烈
+        /// </summary>
+        /// <param name="targetX">目标X位移（相对坐标）</param>
+        /// <param name="targetY">目标Y位移（相对坐标）</param>
+        /// <param name="smoothness">平滑度（值越大越平滑越慢，推荐 0.5-2.0）</param>
+        /// <param name="smoothThreshold">平滑阈值（移动距离小于此值时直接一步到位）</param>
+        /// <param name="easingPower">加速度幂次（1.0=线性, 2.0=标准, 3.0=剧烈）</param>
+        /// <param name="enableRandomArc">启用随机弧度方向</param>
+        /// <param name="enableEasing">启用缓入缓出速度曲线</param>
+        /// <param name="enableJitter">启用微抖动</param>
+        /// <param name="enableOvershoot">启用过冲修正</param>
+        public void HumanLikeMove(
+            int targetX,
+            int targetY,
+            double smoothness = 1.0,
+            int smoothThreshold = 20,
+            double easingPower = 2.0,
+            bool enableRandomArc = true,
+            bool enableEasing = true,
+            bool enableJitter = true,
+            bool enableOvershoot = false)
+        {
+            // ========== 参数校验 ==========
+            if (smoothness < 0.1) smoothness = 0.1;  // 最小平滑度
+            if (targetX == 0 && targetY == 0) return;
+
+            // ========== 计算基础几何参数 ==========
+            double distance = Math.Sqrt(targetX * targetX + targetY * targetY);
+
+            // ========== 短距离快速路径 ==========
+            if (distance < smoothThreshold)
+            {
+                MouseMove(targetX, targetY);
+                return;
+            }
+
+            double angle = Math.Atan2(targetY, targetX);
+
+            // ========== 随机弧度方向计算 ==========
+            int arcDirection = enableRandomArc ? (_rand.Next(2) == 0 ? 1 : -1) : 1;
+            double offsetRatio = enableRandomArc ? (0.05 + _rand.NextDouble() * 0.1) : 0.1;
+            double offset = distance * offsetRatio * arcDirection;
+
+            // ========== 贝塞尔曲线控制点计算 ==========
+            double cp1X = targetX * 0.33 + Math.Sin(angle) * offset;
+            double cp1Y = targetY * 0.33 - Math.Cos(angle) * offset;
+            double cp2X = targetX * 0.66;
+            double cp2Y = targetY * 0.66;
+
+            // ========== 步数计算：距离 × 平滑度 ==========
+            // 每步约 1ms（MouseMove 延迟），所以时间 ≈ steps × 1ms
+            int steps = Math.Max(10, (int)(distance * smoothness));
+            double lastSentX = 0, lastSentY = 0;
+
+            // ========== 主循环：每步都发送 MouseMove ==========
+            for (int i = 1; i <= steps; i++)
+            {
+                // t: 当前进度，线性从 0 到 1
+                double t = (double)i / steps;
+
+                // 缓入缓出变换
+                if (enableEasing)
+                    t = t < 0.5
+                        ? Math.Pow(2, easingPower - 1) * Math.Pow(t, easingPower)
+                        : 1 - Math.Pow(-2 * t + 2, easingPower) / 2;
+
+                double u = 1 - t;
+
+                // 贝塞尔曲线计算当前位置
+                double currentX = 3 * u * u * t * cp1X + 3 * u * t * t * cp2X + t * t * t * targetX;
+                double currentY = 3 * u * u * t * cp1Y + 3 * u * t * t * cp2Y + t * t * t * targetY;
+
+                // 微抖动
+                if (enableJitter && i < steps)
+                {
+                    currentX += _rand.Next(-1, 2) * 0.5;
+                    currentY += _rand.Next(-1, 2) * 0.5;
+                }
+
+                // 计算本步位移
+                int deltaX = (int)Math.Round(currentX - lastSentX);
+                int deltaY = (int)Math.Round(currentY - lastSentY);
+
+                // 发送移动指令（每步都发送，保留加减速效果）
+                if (deltaX != 0 || deltaY != 0)
+                {
+                    MouseMove(deltaX, deltaY);
+                    lastSentX += deltaX;
+                    lastSentY += deltaY;
+                }
+                else if (i < steps)
+                {
+                    // 位移为0时仍需延迟，保持时间节奏
+                    MouseMove(0, 0);
+                }
+            }
+
+            // ========== 过冲修正（可选）==========
+            if (enableOvershoot && distance > 20)
+            {
+                int overshootX = (int)(Math.Sign(targetX) * (2 + _rand.Next(4)));
+                int overshootY = (int)(Math.Sign(targetY) * (2 + _rand.Next(4)));
+                MouseMove(overshootX, overshootY);
+                MouseMove(-overshootX, -overshootY);
+            }
+
+            // ========== 最终误差修正 ==========
+            int finalDeltaX = targetX - (int)Math.Round(lastSentX);
+            int finalDeltaY = targetY - (int)Math.Round(lastSentY);
+            if (finalDeltaX != 0 || finalDeltaY != 0)
+                MouseMove(finalDeltaX, finalDeltaY);
         }
         #endregion
 
@@ -505,7 +654,6 @@ namespace gprs.KmBox
                         // 鼠标按键边缘检测
                         if (newMouseButtons != _lastHwMouseButtons)
                         {
-                            // 检测各按键变化
                             for (int bit = 0; bit < 5; bit++)
                             {
                                 int mask = 1 << bit;
@@ -558,6 +706,9 @@ namespace gprs.KmBox
                 if (arr[i] == key) return true;
             return false;
         }
+
+        /// <summary>硬件鼠标按键原始状态（仅调试用）</summary>
+        public int HwMouseButtonState => _hwMouseButtons;
 
         /// <summary>检测物理鼠标左键是否按下</summary>
         public bool IsMouseLeftDown() => (_hwMouseButtons & 0x01) != 0;

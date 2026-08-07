@@ -34,10 +34,6 @@ namespace gprs
             textBox1 = new System.Windows.Forms.TextBox();
             pictureBox1 = new System.Windows.Forms.PictureBox();
             textBox2 = new System.Windows.Forms.TextBox();
-            radioButton1 = new System.Windows.Forms.RadioButton();
-            groupBox1 = new System.Windows.Forms.GroupBox();
-            radioButton3 = new System.Windows.Forms.RadioButton();
-            radioButton2 = new System.Windows.Forms.RadioButton();
             groupBox4 = new System.Windows.Forms.GroupBox();
             lblKmBoxStatus = new System.Windows.Forms.Label();
             btnKmBoxConnect = new System.Windows.Forms.Button();
@@ -51,8 +47,18 @@ namespace gprs
             folderBrowserDialog2 = new System.Windows.Forms.FolderBrowserDialog();
             chkDebugMode = new System.Windows.Forms.CheckBox();
             lblDebugInfo = new System.Windows.Forms.Label();
+            chkQuickScopeMode = new System.Windows.Forms.CheckBox();
+            lblSniperModel = new System.Windows.Forms.Label();
+            cmbSniperModel = new System.Windows.Forms.ComboBox();
+            lblRifleModel = new System.Windows.Forms.Label();
+            cmbRifleModel = new System.Windows.Forms.ComboBox();
+            chkAutoSwitchWeapon = new System.Windows.Forms.CheckBox();
+            chkRifleLockHead = new System.Windows.Forms.CheckBox();
+            chkMicroAim = new System.Windows.Forms.CheckBox();
+            txtMicroAimExtend = new System.Windows.Forms.TextBox();
+            lblBlindFireFrames = new System.Windows.Forms.Label();
+            txtBlindFireFrames = new System.Windows.Forms.TextBox();
             ((System.ComponentModel.ISupportInitialize)pictureBox1).BeginInit();
-            groupBox1.SuspendLayout();
             groupBox4.SuspendLayout();
             SuspendLayout();
             // 
@@ -80,49 +86,6 @@ namespace gprs
             textBox2.Name = "textBox2";
             textBox2.Size = new System.Drawing.Size(544, 35);
             textBox2.TabIndex = 3;
-            // 
-            // radioButton1
-            // 
-            radioButton1.AutoSize = true;
-            radioButton1.Location = new System.Drawing.Point(6, 22);
-            radioButton1.Name = "radioButton1";
-            radioButton1.Size = new System.Drawing.Size(74, 21);
-            radioButton1.TabIndex = 6;
-            radioButton1.TabStop = true;
-            radioButton1.Text = "穿越火线";
-            radioButton1.UseVisualStyleBackColor = true;
-            // 
-            // groupBox1
-            // 
-            groupBox1.Controls.Add(radioButton3);
-            groupBox1.Controls.Add(radioButton2);
-            groupBox1.Controls.Add(radioButton1);
-            groupBox1.Location = new System.Drawing.Point(1, 648);
-            groupBox1.Name = "groupBox1";
-            groupBox1.Size = new System.Drawing.Size(90, 108);
-            groupBox1.TabIndex = 7;
-            groupBox1.TabStop = false;
-            groupBox1.Text = "功能选择";
-            // 
-            // radioButton3
-            // 
-            radioButton3.AutoSize = true;
-            radioButton3.Location = new System.Drawing.Point(6, 78);
-            radioButton3.Name = "radioButton3";
-            radioButton3.Size = new System.Drawing.Size(38, 21);
-            radioButton3.TabIndex = 12;
-            radioButton3.Text = "cs";
-            radioButton3.UseVisualStyleBackColor = true;
-            // 
-            // radioButton2
-            // 
-            radioButton2.AutoSize = true;
-            radioButton2.Location = new System.Drawing.Point(6, 51);
-            radioButton2.Name = "radioButton2";
-            radioButton2.Size = new System.Drawing.Size(74, 21);
-            radioButton2.TabIndex = 11;
-            radioButton2.Text = "无畏契约";
-            radioButton2.UseVisualStyleBackColor = true;
             // 
             // groupBox4
             // 
@@ -232,15 +195,138 @@ namespace gprs
             lblDebugInfo.Size = new System.Drawing.Size(0, 13);
             lblDebugInfo.TabIndex = 15;
             // 
+            // chkQuickScopeMode
+            // 
+            chkQuickScopeMode.AutoSize = true;
+            chkQuickScopeMode.Checked = true;
+            chkQuickScopeMode.CheckState = System.Windows.Forms.CheckState.Checked;
+            chkQuickScopeMode.Location = new System.Drawing.Point(97, 820);
+            chkQuickScopeMode.Name = "chkQuickScopeMode";
+            chkQuickScopeMode.Size = new System.Drawing.Size(75, 21);
+            chkQuickScopeMode.TabIndex = 20;
+            // UI 文本“真人模式”：勾选=真人操作（瞬狙+开镜打，等用户左键意图才代发），
+            //                   不勾=瞬狙模式（开镜即自动代发，视觉上像连续瞬狙）。
+            // 字段名 chkQuickScopeMode / _quickScopeMode / QuickScopeController 均是历史命名（原程序“瞬狙干预”），
+            // 为避免大规模重构未重命名，语义见相关字段注释。
+            chkQuickScopeMode.Text = "真人模式";
+            chkQuickScopeMode.UseVisualStyleBackColor = true;
+            chkQuickScopeMode.CheckedChanged += chkQuickScopeMode_CheckedChanged;
+            // 
+            // lblSniperModel
+            // 
+            lblSniperModel.AutoSize = true;
+            lblSniperModel.Location = new System.Drawing.Point(97, 794);
+            lblSniperModel.Name = "lblSniperModel";
+            lblSniperModel.Size = new System.Drawing.Size(35, 17);
+            lblSniperModel.TabIndex = 16;
+            lblSniperModel.Text = "狙击:";
+            // 
+            // cmbSniperModel
+            // 
+            cmbSniperModel.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            cmbSniperModel.Location = new System.Drawing.Point(137, 790);
+            cmbSniperModel.Name = "cmbSniperModel";
+            cmbSniperModel.Size = new System.Drawing.Size(190, 25);
+            cmbSniperModel.TabIndex = 17;
+            // 
+            // lblRifleModel
+            // 
+            lblRifleModel.AutoSize = true;
+            lblRifleModel.Location = new System.Drawing.Point(340, 794);
+            lblRifleModel.Name = "lblRifleModel";
+            lblRifleModel.Size = new System.Drawing.Size(35, 17);
+            lblRifleModel.TabIndex = 18;
+            lblRifleModel.Text = "步枪:";
+            // 
+            // cmbRifleModel
+            // 
+            cmbRifleModel.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            cmbRifleModel.Location = new System.Drawing.Point(380, 790);
+            cmbRifleModel.Name = "cmbRifleModel";
+            cmbRifleModel.Size = new System.Drawing.Size(190, 25);
+            cmbRifleModel.TabIndex = 19;
+            // 
+            // chkAutoSwitchWeapon
+            // 
+            chkAutoSwitchWeapon.AutoSize = true;
+            chkAutoSwitchWeapon.Location = new System.Drawing.Point(340, 820);
+            chkAutoSwitchWeapon.Name = "chkAutoSwitchWeapon";
+            chkAutoSwitchWeapon.Size = new System.Drawing.Size(75, 21);
+            chkAutoSwitchWeapon.TabIndex = 23;
+            chkAutoSwitchWeapon.Text = "狙击切枪";
+            chkAutoSwitchWeapon.UseVisualStyleBackColor = true;
+            chkAutoSwitchWeapon.CheckedChanged += chkAutoSwitchWeapon_CheckedChanged;
+            // 
+            // chkRifleLockHead
+            // 
+            chkRifleLockHead.AutoSize = true;
+            chkRifleLockHead.Checked = true;
+            chkRifleLockHead.CheckState = System.Windows.Forms.CheckState.Checked;
+            chkRifleLockHead.Location = new System.Drawing.Point(440, 820);
+            chkRifleLockHead.Name = "chkRifleLockHead";
+            chkRifleLockHead.Size = new System.Drawing.Size(75, 21);
+            chkRifleLockHead.TabIndex = 24;
+            chkRifleLockHead.Text = "步枪打头";
+            chkRifleLockHead.UseVisualStyleBackColor = true;
+            chkRifleLockHead.CheckedChanged += chkRifleLockHead_CheckedChanged;
+            // 
+            // chkMicroAim
+            // 
+            chkMicroAim.AutoSize = true;
+            chkMicroAim.Location = new System.Drawing.Point(525, 820);
+            chkMicroAim.Name = "chkMicroAim";
+            chkMicroAim.Size = new System.Drawing.Size(75, 21);
+            chkMicroAim.TabIndex = 25;
+            chkMicroAim.Text = "微自瞄";
+            chkMicroAim.UseVisualStyleBackColor = true;
+            chkMicroAim.CheckedChanged += chkMicroAim_CheckedChanged;
+            // 
+            // txtMicroAimExtend
+            // 
+            txtMicroAimExtend.Location = new System.Drawing.Point(598, 818);
+            txtMicroAimExtend.Name = "txtMicroAimExtend";
+            txtMicroAimExtend.Size = new System.Drawing.Size(40, 23);
+            txtMicroAimExtend.TabIndex = 26;
+            txtMicroAimExtend.Text = "30";
+            txtMicroAimExtend.TextChanged += txtMicroAimExtend_TextChanged;
+            // 
+            // lblBlindFireFrames
+            // 
+            lblBlindFireFrames.AutoSize = true;
+            lblBlindFireFrames.Location = new System.Drawing.Point(6, 794);
+            lblBlindFireFrames.Name = "lblBlindFireFrames";
+            lblBlindFireFrames.Size = new System.Drawing.Size(56, 17);
+            lblBlindFireFrames.TabIndex = 27;
+            lblBlindFireFrames.Text = "盲射帧数:"; // 仅真人模式生效：0=不自瞄只原地代发，1=只看当前帧，N≥2 多等 N-1 帧（0~10）
+            // 
+            // txtBlindFireFrames
+            // 
+            txtBlindFireFrames.Location = new System.Drawing.Point(6, 818);
+            txtBlindFireFrames.Name = "txtBlindFireFrames";
+            txtBlindFireFrames.Size = new System.Drawing.Size(50, 23);
+            txtBlindFireFrames.TabIndex = 28;
+            txtBlindFireFrames.Text = "1";
+            txtBlindFireFrames.TextChanged += txtBlindFireFrames_TextChanged;
+            // 
             // Form1
             // 
             AutoScaleDimensions = new System.Drawing.SizeF(7F, 17F);
             AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            ClientSize = new System.Drawing.Size(646, 793);
+            ClientSize = new System.Drawing.Size(643, 855);
+            Controls.Add(txtBlindFireFrames);
+            Controls.Add(lblBlindFireFrames);
+            Controls.Add(txtMicroAimExtend);
+            Controls.Add(chkMicroAim);
+            Controls.Add(chkRifleLockHead);
+            Controls.Add(chkAutoSwitchWeapon);
+            Controls.Add(chkQuickScopeMode);
+            Controls.Add(cmbRifleModel);
+            Controls.Add(lblRifleModel);
+            Controls.Add(cmbSniperModel);
+            Controls.Add(lblSniperModel);
             Controls.Add(lblDebugInfo);
             Controls.Add(chkDebugMode);
             Controls.Add(groupBox4);
-            Controls.Add(groupBox1);
             Controls.Add(textBox2);
             Controls.Add(pictureBox1);
             Controls.Add(textBox1);
@@ -248,8 +334,6 @@ namespace gprs
             Text = "Form1";
             Load += Form1_Load;
             ((System.ComponentModel.ISupportInitialize)pictureBox1).EndInit();
-            groupBox1.ResumeLayout(false);
-            groupBox1.PerformLayout();
             groupBox4.ResumeLayout(false);
             groupBox4.PerformLayout();
             ResumeLayout(false);
@@ -260,8 +344,6 @@ namespace gprs
         private System.Windows.Forms.TextBox textBox1;
         private System.Windows.Forms.PictureBox pictureBox1;
         private System.Windows.Forms.TextBox textBox2;
-        private System.Windows.Forms.RadioButton radioButton1;
-        private System.Windows.Forms.GroupBox groupBox1;
         private System.Windows.Forms.GroupBox groupBox4;
         private System.Windows.Forms.TextBox txtKmBoxIP;
         private System.Windows.Forms.TextBox txtKmBoxPort;
@@ -273,10 +355,19 @@ namespace gprs
         private System.Windows.Forms.Label lblKmBoxStatus;
         private System.Windows.Forms.FolderBrowserDialog folderBrowserDialog1;
         private System.Windows.Forms.FolderBrowserDialog folderBrowserDialog2;
-        private System.Windows.Forms.RadioButton radioButton2;
-        private System.Windows.Forms.RadioButton radioButton3;
         private System.Windows.Forms.CheckBox chkDebugMode;
         private System.Windows.Forms.Label lblDebugInfo;
+        private System.Windows.Forms.Label lblSniperModel;
+        private System.Windows.Forms.ComboBox cmbSniperModel;
+        private System.Windows.Forms.Label lblRifleModel;
+        private System.Windows.Forms.ComboBox cmbRifleModel;
+                private System.Windows.Forms.CheckBox chkQuickScopeMode;
+        private System.Windows.Forms.CheckBox chkAutoSwitchWeapon;
+        private System.Windows.Forms.CheckBox chkRifleLockHead;
+        private System.Windows.Forms.CheckBox chkMicroAim;
+        private System.Windows.Forms.TextBox txtMicroAimExtend;
+        private System.Windows.Forms.Label lblBlindFireFrames;
+        private System.Windows.Forms.TextBox txtBlindFireFrames;
 
     }
 }

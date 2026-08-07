@@ -1,196 +1,171 @@
-# DualPC-TensorRT-Aim-KMBOX
+# DualPC-TensorRT-Aim-KMBOX（gprs）
 
-基于双机架构的 TensorRT 加速 AI 视觉瞄准系统（KmBox + 美乐威采集卡版）
+基于双机架构的 TensorRT 加速 AI 视觉瞄准系统（美乐威采集卡 + KmBox Net 网络版）。
 
 ## 项目概述
 
-这是一个高性能的双机协同视觉瞄准系统，采用 **运算机 + 游戏机** 分离架构，通过 TensorRT 加速 YOLOv8-Pose 模型实现超低延迟的人体姿态检测与自动瞄准。
-
-### 核心特点
-
-- **极致低延迟**：总延迟约 **12ms**（采集 5ms + 推理 5ms + 控制 2ms）
-- **TensorRT 加速**：YOLOv8L-Pose 模型推理仅需 **~5ms**
-- **双机架构**：运算与游戏分离，游戏机零性能损耗
-- **KmBox 硬件控制**：UDP 网络通信 + USB HID 模拟，支持贝塞尔曲线
+运算机 + 游戏机分离：采集卡捕获游戏画面 → YOLOv8-Pose 识别人体姿态 → 目标选择 → KmBox Net（UDP）控制游戏机鼠标。
+武器模式通过**画面中心准心像素判定**自动区分（狙击/步枪），无需手动切换，详见 [DESIGN.md](DESIGN.md)。
 
 ## 系统架构
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│                          运算机                                   │
-│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐          │
-│  │ Pro Capture │───▶│  图像处理   │───▶│  TensorRT   │          │
-│  │ PCIE采集卡  │    │  640×640    │    │ YOLOv8-Pose │          │
-│  │ 2K 144Hz    │    │    ~5ms     │    │    ~5ms     │          │
-│  └──────┬──────┘    └─────────────┘    └──────┬──────┘          │
-│         │                                      │                 │
-│         │ HDMI输入                             ▼                 │
-│         │                             ┌─────────────┐           │
-│         │                             │  目标选择   │           │
-│         │                             │ 23部位系统 │           │
-│         │                             └──────┬──────┘           │
-│         │                                    │ UDP网络         │
-└─────────┼────────────────────────────────────┼───────────────────┘
-          │                                    │
-          │                                    ▼
-┌─────────┼────────────────────────────────────────────────────────┐
-│         │                 游戏机                                  │
-│         │                                                        │
-│  ┌──────┴──────┐                      ┌─────────────┐           │
-│  │  显卡 HDMI  │                      │   KmBox    │◀── UDP    │
-│  │    输出     │                      │  USB鼠标   │           │
-│  └─────────────┘                      └──────┬──────┘           │
-│                                              │ USB              │
-│                                              ▼                  │
-│                                       ┌─────────────┐           │
-│                                       │  游戏机USB  │           │
-│                                       │   鼠标输入  │           │
-│                                       └─────────────┘           │
-└──────────────────────────────────────────────────────────────────┘
+┌─────────────────────────── 运算机 ───────────────────────────┐
+│  美乐威 Pro Capture PCIE ──▶ 640×640 截取 ──▶ TensorRT YOLOv8-Pose │
+│        (2K 144Hz)          (~5ms)              (10~20ms)     │
+│                                   │                          │
+│                          目标选择（23 部位系统）                │
+└───────────────────────────────────┼──────────────────────────┘
+                                    │ UDP (192.168.3.188:8888)
+┌─────────────── 游戏机 ────────────┼──────────────────────────┐
+│  显卡 HDMI ──▶ 采集卡              ▼                          │
+│                          KmBox Net ──▶ USB HID ──▶ 游戏        │
+│  物理鼠标 ──▶ KmBox Net ──▶ 游戏（可被软件按位屏蔽/透传）        │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-## 延迟分析
+## 实测性能（2026-01 测试环境）
 
-| 环节 | 延迟 | 说明 |
+> 历史文档曾宣称总延迟 ~12ms，**已废弃**。以下为实测口径，完整拆解见 [docs/LATENCY.md](docs/LATENCY.md)。
+
+| 环节 | 实测 | 说明 |
 |------|------|------|
-| 采集卡 | ~5ms | Pro Capture @ 2K 144Hz 低延迟模式 |
-| 图像推理 | ~5ms | TensorRT + YOLOv8L-Pose |
-| KmBox | ~2ms | UDP 网络 + USB HID |
-| **总延迟** | **~12ms** | 端到端延迟 |
+| 采集卡（2K 144Hz 低延迟模式） | ~5ms | 符合 1/144Hz ≈ 6.9ms 理论值 |
+| 准心检测 | 0.2-0.4ms | 中心 2×2 像素判定 |
+| YOLO 推理 | L: 10.8-19.5ms / **M: ~7ms**（RTX5060） | 视模型与显卡而定，是延迟大头 |
+| 目标选择 | <1ms | — |
+| KmBox Net（UDP + USB HID） | 数 ms | 事件推送式监听，非轮询 |
+| **端到端** | **20-30ms** | 反应测试网页实测 |
+
+**注意**：RTX5090 → RTX5060 换卡后 L 模型推理抖动加剧，瞬狙成功率下降，调查见 [ISSUES.md](ISSUES.md) ISSUE-022；
+2026-08-06 实测 RTX5060 上 M 模型端到端推理仅 ~7ms，Monitoring 窗口内推理机会从 2~3 次提升到 ~14 次（详见 [docs/LATENCY.md](docs/LATENCY.md)）。
+TensorRT engine 与构建显卡绑定，换卡必须重建 engine。
 
 ## 硬件要求
 
 ### 运算机
-- **显卡**：NVIDIA RTX 系列（推荐 RTX 4060 及以上）
-- **采集卡**：美乐威 Pro Capture HDMI（PCIE 版本）
+- **显卡**：NVIDIA RTX 系列（推理卡，engine 按此卡构建）
+- **采集卡**：美乐威 Pro Capture HDMI（PCIE 版）
 - **系统**：Windows 10/11 x64
 
 ### 游戏机
-- **KmBox**：USB HID 鼠标/键盘模拟器
-- **连接**：HDMI 输出到采集卡，KmBox USB 连接游戏机
-- **通信**：运算机与 KmBox 通过 UDP 网络通信
-
-### 推荐配置参数
-- 采集分辨率：2560×1440 @ 144Hz（低延迟约 5ms）
-- 备选：1920×1080 @ 60Hz（低延迟约 15ms，采集卡成本更低）
+- **KmBox Net**：网络版键鼠透传盒子（UDP 协议），接在物理鼠标与游戏机之间
+- **连接**：游戏机 HDMI 输出到采集卡；运算机与 KmBox 同一局域网
 
 ## 软件依赖
 
-- **.NET 9.0** 或更高版本
-- **CUDA 12.x** + **cuDNN 9.x**
-- **TensorRT 10.x**
-- **美乐威 SDK**（MWCapture）
+- **.NET 9.0**
+- **CUDA 12.x** + **cuDNN 9.x** + **TensorRT 10.x**（TensorRT-Solutions/TensorRT-YOLO 运行时 DLL 已随项目附带于 `gprs/TensorRT/`）
+- **美乐威 MWCapture SDK**（`gprs/MWCapture/LibMWCapture.dll` 已附带）
 
 ## 安装与配置
 
-### 1. 环境准备
+### 1. 模型准备
+
+> ⚠️ **engine 文件与显卡硬件绑定，更换显卡必须重新导出！**
+
+使用 [TensorRT-YOLO](https://github.com/laugh12321/TensorRT-YOLO) 在**运算机当前显卡**上导出：
 
 ```bash
-# 安装 CUDA、cuDNN、TensorRT
-# 配置系统环境变量 TRT_LIB_PATH 指向 TensorRT lib 目录
-```
-
-### 2. 模型导出
-
-> ⚠️ **重要**：TensorRT Engine 文件与硬件绑定，不同显卡需重新导出！
-
-使用 [TensorRT-YOLO](https://github.com/laugh12321/TensorRT-YOLO) 导出模型：
-
-```bash
-# 从官方 YOLO PT 模型导出
 trtyolo export -w yolov8l-pose.pt -v yolov8 -o ./models --fp16
 ```
+
+将所有 `*-pose.engine` 放入程序目录下 `Models/`（程序启动时自动扫描）。
+
+### 2. KmBox Net 配置
+
+主界面填写（默认值已内置）：
+
+| 项 | 默认值 |
+|---|---|
+| IP | 192.168.3.188 |
+| 端口 | 8888 |
+| UUID | 12345678 |
+
+连接后程序自动开启物理键鼠监控（`MonitorEnable(9527)`，UDP 事件推送）。
 
 ### 3. 编译运行
 
 ```bash
-# 使用 Visual Studio 2022 打开 gprs.sln
-# 编译 Release x64 版本
-# 将 Engine 模型文件放置到程序目录
+# Visual Studio 2022 打开 gprs.sln，编译 Release x64
+# 或命令行：
+dotnet build gprs/gprs.csproj -c Release
 ```
 
-### 4. KmBox 配置
+### 4. 游戏内准备
 
-将 KmBox 硬件单独配置：
-- 波特率：115200
-- USB HID 鼠标/键盘模式
+- 步枪准心设置为**黄色 (255,255,0)**（系统靠准心颜色区分武器模式，见 DESIGN.md）
+- 狙击开镜后为纯红准心，无需设置
+
+## 测试入口（编译宏）
+
+`Program.cs` 顶部通过 `#define` 切换启动窗体（默认全注释 = 主程序）：
+
+| 宏 | 窗体 | 用途 |
+|---|---|---|
+| （无） | Form1 | 主程序 |
+| `TEST_MODE` | TestMoveForm | HumanLikeMove 鼠标轨迹测试 |
+| `TEST_RIFLE` | TestRifleForm | ISSUE-013 步枪模式隔离测试（无 YOLO） |
+| `TEST_SNIPER` | TestSniperForm | 狙击反作弊触发测试（瞬移+开枪时序快照） |
+| `TEST_CROSSHAIR` | TestCrosshairColorForm | 步枪准心命中颜色采样（持续观察 RGB） |
+| `TEST_CROSSHAIR_STATE` | TestCrosshairStateForm | 准心状态监视：复刻真人模式原生链路，四态/RGB/状态机时序记录 + CSV 导出 |
 
 ## 项目结构
 
 ```
-DualPC-TensorRT-Aim-KMBOX/
-├── gprs/                       # 主程序
-│   ├── Form1.cs                # 主窗口逻辑
-│   ├── MWCapture/              # 美乐威采集卡 SDK 封装
-│   ├── TensorRT/               # TensorRT 推理封装
-│   │   └── TrtYoloPoseNativeInferencer.cs
-│   ├── YoloProcessing/         # YOLO 数据处理
-│   │   ├── TargetSelector.cs   # 目标选择算法（23部位系统）
-│   │   ├── ImageHelper.cs      # 图像处理
-│   │   └── DebugRenderer.cs    # 调试渲染
-│   ├── KmBox/                  # KmBox 硬件控制封装
-│   │   └── KmBoxNet.cs         # 网络通信封装
-│   └── Utils/                  # 工具类
-│       └── GameConfig.cs       # 游戏配置
-├── ISSUES.md                   # 问题追踪文档
-└── gprs.sln                    # 解决方案文件
+gprs - 采集卡2.3/
+├── README.md / DESIGN.md / ISSUES.md      # 三大件：入口 / 设计 / 问题追踪
+├── docs/                                  # 次级文档（延迟专题 / 参考调研 / 归档）
+└── gprs/                                  # 主程序
+    ├── Form1.cs                           # 主窗体 + YOLO 主循环（KmBox 指令唯一源头）
+    ├── Program.cs                         # 启动入口（#define 测试宏切换）
+    ├── Firing/                            # 射击控制层（阶段 1~2 解耦产物）
+    │   ├── WeaponDispatcher.cs            #   武器模式调度
+    │   ├── QuickScopeController.cs        #   真人模式瞬狙四态状态机
+    │   ├── RifleSessionController.cs      #   步枪会话（右键=开火周期）
+    │   ├── LeftMaskController.cs          #   狙击左键屏蔽 + 物理边沿意图捕获
+    │   └── FireActions.cs                 #   开火动作（分段移动 + 细粒度 XY 屏蔽）
+    ├── YoloProcessing/
+    │   ├── ImageHelper.cs                 #   准心检测 + YOLO 推理封装
+    │   ├── TargetSelector.cs              #   目标选择（23 部位系统）
+    │   └── DebugRenderer.cs               #   调试渲染
+    ├── KmBox/KmBoxNet.cs                  # KmBox Net UDP 协议封装
+    ├── MWCapture/                         # 美乐威采集卡 SDK 封装
+    ├── TensorRT/                          # TensorRT-YOLO C 封装 + 运行时 DLL
+    ├── Utils/GameConfig.cs                # 游戏配置（分辨率/灵敏度等）
+    └── Test*Form.cs                       # 各测试窗体（见上表）
 ```
 
-## 版本更新
+## 文档索引
 
-### v4.0 (KmBox + 美乐威采集卡版)
+| 文档 | 内容 |
+|---|---|
+| [DESIGN.md](DESIGN.md) | 架构与机制设计：准心判定、步枪会话、真人模式状态机、KmBox Mask 机制、模块划分 |
+| [ISSUES.md](ISSUES.md) | 问题追踪（ISSUE-001~022），活跃问题见顶部状态表 |
+| [docs/LATENCY.md](docs/LATENCY.md) | 端到端延迟专题：拆分实测、采集卡低延迟配置结论、待验证项 |
+| [docs/REFERENCE-PROJECTS.md](docs/REFERENCE-PROJECTS.md) | 参考项目调研快照（2025-01-28） |
+| [docs/archive/](docs/archive/) | 文档大改版前的原件快照（仅供追溯） |
 
-#### 目标选择架构重构
-- 🎯 **23 部位系统**：17 原始姿态点 + 5 组合部位 + 1 兜底
-  - 新增组合部位：额头1、额头2、双肩中点、胸、双髋中点
-- 📊 **独立阈值配置**：每个部位单独设置置信度阈值，方便游戏内调试
-- 🔄 **优先级表系统**：锁头/锁身体两套独立优先级表
-- ✨ **简化 API**：`bool lockHead` 参数替代复杂的部位枚举
-- 🚨 **尸体检测**：基于宽高比和姿态点位置过滤倒地目标
+## 文档维护约定
 
-#### 硬件控制优化
-- 🔌 **KmBox 集成**：新增 KmBox 硬件控制模块
-- 📡 **网络通信**：支持 UDP 网络控制协议
-- 🎮 **贝塞尔曲线**：支持平滑鼠标轨迹控制
-
-#### 性能优化
-- ♻️ **对象复用**：LockResult、PartInfo 缓存复用，零 GC 压力
-- 🚀 **栈分配优化**：阈值数组使用 stackalloc，避免堆分配
-- 📉 **代码精简**：移除冗余代码，减少 500+ 行
-
-#### 鼠标移动优化
-- 🎯 **FOV 转换**：新增 atan2 非线性转换算法，接近目标时精细移动，远离时快速追踪
-- 🔀 **双模式切换**：UI 开关实时切换线性/FOV转换，方便对比测试
-
-### v3.0 (TensorRT 加速版)
-- 🚀 **TensorRT 加速**：推理延迟从 ~15ms 降至 ~5ms
-- 👁️ **小目标识别**：改进小目标和部分遮挡目标的识别能力
-- 🏗️ **代码重构**：优化项目结构，模块化设计
-
-### v2.2
-- 基础 ONNX 推理版本
-- 详见原仓库 [Ai-Aim-Dual-Computer](https://github.com/ai123lj/Ai-Aim-Dual-Computer)
-
-## 使用说明
-
-1. 连接硬件：HDMI 线连接游戏机显卡到采集卡，KmBox USB 连接游戏机
-2. 配置网络：确保运算机与 KmBox 在同一局域网，配置 IP 和端口
-3. 启动程序：运行编译后的 gprs.exe
-4. 调整参数：根据游戏调整灵敏度和瞄准点
+1. **单一事实来源**：每个主题只在一处文档维护（设计→DESIGN、问题→ISSUES、延迟→LATENCY），其它文档只引用不重复；
+2. **以代码为准**：文档与代码矛盾一律按代码修正文档；修改行为类代码时同步检查 DESIGN/ISSUES 相关章节；
+3. **新增问题**：在 ISSUES.md 按 `ISSUE-XXX` 模板追加，并同步更新顶部状态表；
+4. **大改版前归档**：结构性重写任何文档前，先把原件整份复制到 `docs/archive/` 并登记。
 
 ## 注意事项
 
-1. **模型兼容性**：Engine 文件与显卡硬件绑定，更换显卡需重新导出
-2. **采集卡驱动**：确保安装最新美乐威驱动
-3. **TensorRT 版本**：确保 TensorRT SDK 版本与 DLL 匹配
+1. **模型兼容性**：engine 与构建显卡绑定，换卡必须重新导出（ISSUE-022 的教训）
+2. **采集卡驱动**：保持最新美乐威驱动
+3. **TensorRT 版本**：SDK 版本须与 `gprs/TensorRT/` 下 DLL 匹配
 4. **仅供学习研究**：请勿用于破坏游戏公平性
 
 ## 相关链接
 
-- [TensorRT-YOLO](https://github.com/laugh12321/TensorRT-YOLO) - 模型导出工具
-- [美乐威 SDK](https://www.magewell.com/downloads) - 采集卡 SDK
-- [原版仓库 v3.0](https://github.com/ai123lj/DualPC-TensorRT-Aim) - TensorRT 加速版
-- [原版仓库 v2.x](https://github.com/ai123lj/Ai-Aim-Dual-Computer) - ONNX 版本
+- [TensorRT-YOLO](https://github.com/laugh12321/TensorRT-YOLO) — 模型导出工具
+- [美乐威 SDK](https://www.magewell.com/downloads) — 采集卡 SDK
+- [原版仓库 v3.0](https://github.com/ai123lj/DualPC-TensorRT-Aim) — TensorRT 加速版
+- [原版仓库 v2.x](https://github.com/ai123lj/Ai-Aim-Dual-Computer) — ONNX 版本
 
 ## License
 

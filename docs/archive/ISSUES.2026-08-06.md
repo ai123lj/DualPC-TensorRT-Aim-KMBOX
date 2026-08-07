@@ -2,11 +2,6 @@
 
 本文档记录项目中发现的待解决问题、临时修复方案及其来龙去脉，便于后续彻底解决。
 
-> **文档约定**（详见 README「文档维护约定」）：
-> - 新增问题按 `ISSUE-XXX` 模板追加到文档末尾，并同步更新下方状态表；ID 递增不复用
-> - 文档与代码矛盾时以代码为准，确认过时后**就地修正状态/引用**，不删除历史正文
-> - 结构性大改前将本文件整份快照至 `docs/archive/`
-
 ---
 
 ## 📋 问题状态一览
@@ -18,8 +13,8 @@
 | ISSUE-022 | 真人模式瞬狙成功率低（换 RTX5060 后加剧） | 🔴 已有初步数据，待确认泄漏路径 |
 | ISSUE-021 | 狙击准心偶发识别失败（1.5s 空洞） | 🔴 新发现，暂存待复现 |
 | ISSUE-014 | 瞬狙 / 狙击模式 UnmaskAll 时序（CF 键鼠异常候选） | 🔴 调查中 |
-| ISSUE-016 | 屏蔽粒度过粗 MaskAll/UnmaskAll | ✅ 核心方案已落地（FireActions 细粒度屏蔽） |
-| ISSUE-017 | 狙击准心期间左键屏蔽策略 | ✅ 主体已实施；CrosshairStabilizer 废弃（改移除去抖） |
+| ISSUE-016 | 屏蔽粒度过粗 MaskAll/UnmaskAll | 🟡 方向已认同 |
+| ISSUE-017 | 狙击准心期间左键屏蔽策略 | 🟡 规格已锁定 |
 | ISSUE-018 | 鼠标操作缺乏真人特征 | 🟡 方向已定 |
 | ISSUE-019 | 键鼠异常其他潜在风险点 | 🟡 逐项待处理 |
 | ISSUE-009 | 线性模式 XY 耦合 | 🔵 待解决 |
@@ -33,7 +28,7 @@
 | ISSUE-020 | 屏蔽职责归属总览 | 📋 规划参考 |
 | ISSUE-001 / 002 / 004 / 005 / 013 / 015 | 共 6 项已完成（折叠归档） | ✅ |
 
-> 关注活跃问题直接跳至 **ISSUE-021 / 014 / 018~019 / 022**；已完成条目位于文档后半部分，默认折叠。
+> 关注活跃问题直接跳至 **ISSUE-021 / 014 / 016~019**；已完成条目位于文档后半部分，默认折叠。
 
 ---
 
@@ -392,7 +387,7 @@ _lastInferTime = DateTime.Now;
 
 ### 相关文件
 - `YoloProcessing/TargetSelector.cs` - 添加粘性逻辑
-- `docs/REFERENCE-PROJECTS.md` - 详细实现方案（第八节）
+- `参考项目分析.md` - 详细实现方案
 
 ---
 
@@ -550,7 +545,7 @@ else
 ### 相关文件
 - `YoloProcessing/TargetSelector.cs` - 添加预测逻辑
 - `Form1.cs` - 传入 fireMode 参数
-- `docs/REFERENCE-PROJECTS.md` - 详细实现方案（第九节）
+- `参考项目分析.md` - 详细实现方案
 
 ---
 
@@ -1042,13 +1037,9 @@ if (_quickScopeLeftClickDetected || leftFreshEdge)
 
 ## ISSUE-016: 屏蔽粒度过粗 —— FireActions 的 MaskAll/UnmaskAll 是核弹级清零
 
-**状态**: ✅ 核心方案已落地（2026-08-06 核对代码确认）
+**状态**: 🔍 待校正（用户已初步认同方向）
 **发现日期**: 2026-04-10
 **影响范围**: `Firing/FireActions.cs`（SniperFire / BurstFire）
-
-> **落地说明（2026-08-06）**：`FireActions.SniperFire` / `BurstFire` 现状已无 `MaskAll/UnmaskAll`，
-> 开火前后只用 `MaskMouseX(true/false)` + `MaskMouseY(true/false)` 包住 `MoveInSegments`，与本文建议方案一致。
-> 正文保留作决策记录。
 
 ### 问题描述
 
@@ -1091,15 +1082,10 @@ km.MaskMouseLeft(false); // 只解除左键
 
 ## ISSUE-017: 狙击准心期间左键屏蔽策略不明确
 
-**状态**: ✅ 主体已实施（2026-08-06 核对代码确认），`CrosshairStabilizer` 废弃
+**状态**: ✅ 规格已锁定（2026-04-10），待实施
 **发现日期**: 2026-04-10
 **规格确定日期**: 2026-04-10
 **影响范围**: 狙击模式 / 瞬狙模式 / `FireActions` / `WeaponDispatcher` / 新开 `LeftMaskController` + `CrosshairStabilizer`
-
-> **落地说明（2026-08-06）**：待实施清单中 `LeftMaskController`、FireActions 细粒度屏蔽、
-> QuickScope 左键屏蔽移交、`OnHwLeftEdge` 边沿捕获均已实现（见 `Firing/` 目录与 DESIGN.md「屏蔽职责归属」）。
-> **`CrosshairStabilizer` 未创建且不再需要**：准心判定改为 `R=255 && B=0` + G 通道分流后两态天然互斥，
-> 去抖被整体移除（见 DESIGN.md「为什么不再需要去抖」）。
 
 ### 问题描述
 
@@ -1400,6 +1386,7 @@ ProcessYoloFrame 开头：
 ### 相关文件
 
 - `YoloProcessing/ImageHelper.cs` — `ReadGameCrosshairInfo` 的 2×2 扫描、`hasSnipePixel` / `hasRiflePixel` 判定
+- `Firing/CrosshairStabilizer.cs` — 跨帧去抖
 - `Form1.cs` — 主循环狙击分支 / `_prevStableSnipe` / `_snipeFiredInCurrentScope` 边沿锁
 - `TestCrosshairColorForm.cs` — 已加「持续观察RGB」独立通道，供用户采样
 - `Program.cs` — `#define TEST_CROSSHAIR` 开关
@@ -1435,10 +1422,8 @@ ProcessYoloFrame 开头：
 
 **现象 3**：开火决策只用消费意图那一帧的单帧 YOLO 结果，无目标记忆/重试，漏检一帧即盲射。
 
-**现象 4**：Monitoring 窗口 100ms 在 5060 上只有 2~3 次 YOLO 机会（L 模型），一次推理抖动即吃掉窗口；
+**现象 4**：Monitoring 窗口 100ms 在 5060 上只有 2~3 次 YOLO 机会，一次推理抖动即吃掉窗口；
 engine 在 5090 上构建，5060（同为 sm_120 可运行）未必走最优 tactic。
-> 2026-08-06 实测：RTX5060 + **M 模型端到端推理 ~7ms** → 同一 100ms 窗口内 YOLO 机会提升到 ~14 次，
-> 换 M 模型是现象 4 的最有效缓解方向（狙击模型 L→M 的精度权衡待验证）。
 
 ### 修复方向（待数据确认后实施）
 
@@ -1449,7 +1434,7 @@ engine 在 5090 上构建，5060（同为 sm_120 可运行）未必走最优 tac
 | 目标记忆：意图帧无目标时用 K ms（~120ms）内缓存目标 | 现象 3 | 小 |
 | 意图等目标：无目标不立即盲射，窗口内多等 ≤M ms | 现象 3（对慢卡最有效） | 小 |
 | 状态机防闪丢：snipeEnabled 需连续 2 帧丢失才放行 | 现象 2 路径 A | 小 |
-| 5060 上重建 engine / 评估 M 模型（**2026-08-06 实测 M 端到端 7ms**） | 现象 4 根本性能 | M 已验证可行，待狙击 L→M 精度权衡 |
+| 5060 上重建 engine / 评估 M 模型 | 现象 4 根本性能 | 需在目标机执行 |
 | Monitoring 中第二次右键重新进 Waiting | 连狙双右键 | 需语义确认 |
 
 ### 相关文件

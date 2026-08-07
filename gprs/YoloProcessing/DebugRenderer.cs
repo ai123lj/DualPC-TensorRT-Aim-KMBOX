@@ -96,33 +96,25 @@ namespace gprs
                     g.DrawString(skipReasons[i], FontDebug, BrushRed, bounds.X + 2, bounds.Y - 16);
                 }
 
-                // 绘制关键点和置信度
+                // 绘制关键点圆点（不在点旁边显示文字，改为侧边列表显示）
                 for (int j = 0; j < 17; j++)
                 {
                     var kp = pose[j];
-                    if (kp.Confidence < 0.1f) continue; // 置信度太低不绘制
+                    if (kp.Confidence < 0.1f) continue;
 
                     int x = kp.Point.X;
                     int y = kp.Point.Y;
 
                     // 根据置信度选择颜色
                     SolidBrush pointBrush = kp.Confidence > 0.5f ? BrushGreen : BrushOrange;
-
-                    // 绘制关键点圆点
                     g.FillEllipse(pointBrush, x - 3, y - 3, 6, 6);
-
-                    // 绘制置信度数值（只对选中目标显示详细信息）
-                    if (i == selectedId || pose.Confidence > 0.7f)
-                    {
-                        string kpText = $"{KeypointNames[j]}:{kp.Confidence:F1}";
-                        g.DrawString(kpText, FontDebug, BrushWhite, x + 4, y - 5);
-                    }
                 }
 
-                // 绘制骨架连线（只对选中目标）
+                // 绘制骨架连线和侧边置信度列表（只对选中目标）
                 if (i == selectedId)
                 {
                     DrawSkeleton(g, pose);
+                    DrawKeypointConfidenceList(g, pose);
                 }
             }
 
@@ -173,6 +165,50 @@ namespace gprs
                         pose[start].Point.X, pose[start].Point.Y,
                         pose[end].Point.X, pose[end].Point.Y);
                 }
+            }
+        }
+
+        /// <summary>
+        /// 在左侧绘制关键点置信度列表（包含整体置信度）
+        /// </summary>
+        private static void DrawKeypointConfidenceList(Graphics g, Pose pose)
+        {
+            int x = 4;
+            int y = 22; // 左上角起始位置（统计信息下方）
+
+            // 绘制整体置信度
+            g.FillRectangle(BrushBlack, x - 2, y - 2, 95, 16);
+            var overallBrush = pose.Confidence > 0.5f ? BrushGreen : BrushOrange;
+            g.DrawString($"整体: {pose.Confidence:F2}", FontDebug, overallBrush, x, y);
+            y += 16;
+
+            // 绘制分隔线
+            g.FillRectangle(BrushBlack, x - 2, y - 2, 95, 14);
+            g.DrawString("姿态点置信度:", FontDebug, BrushWhite, x, y);
+            y += 14;
+
+            for (int j = 0; j < 17; j++)
+            {
+                var kp = pose[j];
+
+                // 背景
+                g.FillRectangle(BrushBlack, x - 2, y - 1, 95, 12);
+
+                if (kp.Confidence >= 0.1f)
+                {
+                    // 根据置信度选择颜色
+                    var brush = kp.Confidence > 0.5f ? BrushGreen : BrushOrange;
+                    string text = $"{KeypointNames[j]}: {kp.Confidence:F2}";
+                    g.DrawString(text, FontDebug, brush, x, y);
+                }
+                else
+                {
+                    // 低置信度显示灰色
+                    string text = $"{KeypointNames[j]}: --";
+                    g.DrawString(text, FontDebug, BrushOrange, x, y);
+                }
+
+                y += 12;
             }
         }
 

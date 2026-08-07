@@ -86,9 +86,15 @@ namespace gprs
             public byte AdjacentRed, AdjacentGreen, AdjacentBlue;  // 相邻像素RGB
         }
 
-        // 准心检测阈值
-        public const int CROSSHAIR_THRESHOLD = 253;  // 狙击准心：R-(G+B)/2 > 253
-        public const int RIFLE_THRESHOLD = 253;     // 步枪准心：(R+G)/2-B > 200（黄色）
+        // 准心判定阈值（旧：redness / yellowness版，指标仍保留输出方便调试）
+        public const int CROSSHAIR_THRESHOLD = 254;  // 旧狙击阈值：R-(G+B)/2 > 254（已废弃，用于日志）
+        public const int RIFLE_THRESHOLD = 254;      // 旧步枪阈值：(R+G)/2-B > 254（已废弃，用于日志）
+
+        // 新判定：严格用 R=255 && B=0 划分“是否为准心”，再用 G 通道区分狙击与步枪。
+        // 游戏场景中极少出现 R 满值同时 B 绝对为 0 的像素（捕捉到就是准心或命中特效），
+        // 步枪命中渐变整段满足 R=255 && B=0，G 从 10→255连续变化，涵盖在步枪判定内。
+        public const int CROSSHAIR_R_EXACT = 255;    // 红通道必须等于
+        public const int CROSSHAIR_B_EXACT = 0;      // 蓝通道必须等于
 
         /// <summary>
         /// 从位图中心区域读取游戏准心状态
@@ -113,6 +119,10 @@ namespace gprs
                 int centerX = bmpData.Width / 2;
                 int centerY = bmpData.Height / 2;
 
+                // 严格判定标志：2×2 内是否存在一个 R=255 && B=0 的像素（采样命中或纯红准心）
+                bool hasSnipePixel = false;   // R=255 && G=0   && B=0 → 狙击纯红准心
+                bool hasRiflePixel = false;   // R=255 && G>0   && B=0 → 步枪黄色准心 或 命中渐变（红→橙→黄）
+
                 // 检查2x2区域（中心点周围），同时检测红色和黄色
                 for (int yOffset = 0; yOffset <= 1; yOffset++)
                 {
@@ -131,7 +141,7 @@ namespace gprs
                         byte green = currentLine[pixelPos + 1];
                         byte red = currentLine[pixelPos + 2];
 
-                        // 检测红色度（狙击准心）: R-(G+B)/2
+                        // 调试指标：红色度（老 redness 计算）
                         int redness = red - (green + blue) / 2;
                         if (redness > info.MaxRedness)
                         {
@@ -140,7 +150,7 @@ namespace gprs
                             info.ReddestY = y;
                         }
 
-                        // 检测黄色度（步枪准心）: (R+G)/2-B
+                        // 调试指标：黄色度（老 yellowness 计算）
                         int yellowness = (red + green) / 2 - blue;
                         if (yellowness > info.MaxYellowness)
                         {
@@ -148,12 +158,27 @@ namespace gprs
                             info.YellowestX = x;
                             info.YellowestY = y;
                         }
+
+                        // 新判定：R=255 && B=0 → 准心像素，G 通道区分狙/步
+                        if (red == CROSSHAIR_R_EXACT && blue == CROSSHAIR_B_EXACT)
+                        {
+                            if (green == 0)
+                            {
+                                hasSnipePixel = true;
+                                info.ReddestX = x;   // 覆盖为真正的纯红点坐标
+                                info.ReddestY = y;
+                            }
+                            else
+                            {
+                                hasRiflePixel = true;
+                            }
+                        }
                     }
                 }
 
-                // 判断是否启用（狙击和步枪互斥，优先狙击）
-                info.SnipeEnabled = info.MaxRedness > CROSSHAIR_THRESHOLD;
-                info.RifleEnabled = !info.SnipeEnabled && info.MaxYellowness > RIFLE_THRESHOLD;
+                // 新判定规则：狙击优先（纯红），步枪关系互斥同时涵盖命中渐变色
+                info.SnipeEnabled = hasSnipePixel;
+                info.RifleEnabled = !hasSnipePixel && hasRiflePixel;
 
                 // CF HD停稳检测：检测最红点右边两个像素的颜色
                 if (checkSteady && info.SnipeEnabled)

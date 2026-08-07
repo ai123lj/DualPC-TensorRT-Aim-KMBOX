@@ -1,0 +1,693 @@
+# 参考项目分析
+
+> **调研快照**（2025-01-28）：以本项目为主视角分析多个开源自瞄项目的设计思路，提取可借鉴方案。
+> 本文档不随代码演进更新；待实现项已立条跟踪——Sticky Aim 见 ISSUES.md ISSUE-006，EMA 预测见 ISSUE-007。
+> 原件（含更新日志）见 [archive/参考项目分析.2026-08-06.md](archive/参考项目分析.2026-08-06.md)。
+
+本文档以我们的项目（gprs 采集卡）为主视角，深入分析多个开源自瞄辅助项目的设计思路，提取可借鉴的技术方案。
+
+---
+
+## 项目概览对比
+
+| 特性 | **我们的项目** | **Aimmy** | **AI-Aimbot** | **sunone_aimbot** | **APEX_AIMBOT** |
+|------|---------------|-----------|---------------|-------------------|-----------------|
+| **语言** | C# (.NET 9) | C# (.NET / WPF) | Python | Python | Python |
+| **推理框架** | TensorRT (C++ Native) | ONNX Runtime + DirectML | TensorRT / PyTorch | Ultralytics YOLO | TensorRT |
+| **屏幕采集** | MWCapture 采集卡 | DXGI / GDI+ | bettercam | bettercam/mss/OBS | mss |
+| **鼠标控制** | KmBox 硬件 | 多驱动 (DDXoft, GHub, Razer) | win32api | win32api/ghub/rzctl/Arduino | ghub/msdk |
+| **姿态估计** | YOLOv8 Pose | 仅检测框 | 仅检测框 | 仅检测框 | 仅检测框 |
+| **目标跟踪** | 无 | Sticky Aim | 无 | **ByteTrack** | 无 |
+| **预测算法** | 无 | Kalman/EMA | 无 | **速度+加速度预测** | **PID控制器** |
+| **鼠标平滑** | 贝塞尔曲线 | 多种路径+EMA | 线性 | EMA平滑 | PID |
+
+
+---
+
+## 一、屏幕采集对比
+
+### 1.1 我们的方案：采集卡 + 异步事件驱动
+
+```csharp
+// Form1.cs - 回调丢帧模式
+
+// 采集回调（生产者）
+private void OnFrameCaptured(...)
+{
+    // 关键：如果YOLO没处理完，直接丢弃新帧
+    if (Interlocked.CompareExchange(ref _frameState, 1, 0) != 0) return;
+    
+    _mwCapture.ConvertFrameToBitmapRGB24(frame, ref _captureBitmap);
+    _frameEvent.Set();  // 通知YOLO线程
+}
+
+// YOLO线程（消费者）
+while (true)
+{
+    _frameEvent.WaitOne();       // 等待新帧信号
+    ProcessYoloFrame(...);       // 推理处理
+    Interlocked.Exchange(ref _frameState, 0);  // 标记处理完成
+}
+```
+
+```
+优点：
+- 硬件级采集，游戏无法检测
+- 延迟极低（硬件级别）
+- 不占用游戏进程资源
+- 异步事件驱动，推理慢时自动丢帧
+
+缺点：
+- 需要额外硬件
+- 成本较高
+```
+
+### 1.2 Aimmy：DXGI Desktop Duplication
+
+```csharp
+// CaptureManager.cs - DirectX 桌面复制
+_deskDuplication = targetOutput1.DuplicateOutput(_dxDevice);
+
+// 核心流程
+1. 创建 D3D11 设备
+2. 通过 DXGI 获取桌面复制接口
+3. AcquireNextFrame 获取帧
+4. CopySubresourceRegion 拷贝区域
+5. Map 到 CPU 内存
+
+// 特点：
+- 支持多显示器
+- 有帧缓存机制（15ms超时）
+- 自动降级到 GDI+
+```
+
+**可借鉴：**
+- 帧缓存机制：当获取失败时返回上一帧，避免卡顿
+- 显示器热切换支持
+
+### 1.3 AI-Aimbot：bettercam
+
+```python
+# gameSelection.py
+camera = bettercam.create(region=region, output_color="BGRA", max_buffer_len=512)
+camera.start(target_fps=120, video_mode=True)
+
+# 每帧获取
+npImg = cp.array([camera.get_latest_frame()])
+```
+
+**特点：**
+- 简单易用
+- 支持高帧率（120fps）
+- 使用 CuPy 直接放 GPU
+
+---
+
+## 二、目标选择算法对比
+
+### 2.1 我们的方案：姿态关键点 + 部位优先级
+
+```
+优点：
+- 23个部位可选，精确锁定
+- 支持额头、胸口等组合部位
+- 独立置信度阈值
+
+缺点：
+- 需要姿态估计模型
+- 计算量更大
+```
+
+### 2.2 Aimmy：Sticky Aim（黏性瞄准）
+
+这是 Aimmy 最重要的创新，**强烈建议借鉴**：
+
+```csharp
+// AIManager.cs - HandleStickyAim()
+
+// 核心思路：防止目标抖动切换
+1. 记录当前锁定目标 _currentTarget
+2. 新帧检测到多个目标时，优先匹配上一帧的目标
+3. 使用"锁定分数"机制：
+   - 持续锁定同一目标 → 分数增加
+   - 目标丢失 → 分数衰减
+   - 分数归零 → 才允许切换目标
+
+// 关键参数
+private const int MAX_FRAMES_WITHOUT_TARGET = 3;  // 允许3帧丢失
+private const float LOCK_SCORE_DECAY = 0.85f;     // 每帧衰减系数
+private const float LOCK_SCORE_GAIN = 15f;        // 每帧增益
+
+// 匹配条件
+bool isSameTarget = (距离 < 跟踪半径²) && (尺寸比例 > 0.5);
+```
+
+**可借鉴价值：★★★★★**
+
+我们当前问题：目标在多人场景下可能抖动切换
+Sticky Aim 可以解决这个问题
+
+### 2.3 AI-Aimbot：简单距离排序
+
+```python
+# main_tensorrt.py
+# 计算到屏幕中心的距离
+targets["dist_from_center"] = np.sqrt(
+    (targets.current_mid_x - center_screen[0])**2 + 
+    (targets.current_mid_y - center_screen[1])**2
+)
+# 按距离排序，取最近的
+targets = targets.sort_values("dist_from_center")
+```
+
+**特点：** 简单直接，但容易抖动
+
+---
+
+## 三、预测算法对比
+
+### 3.1 我们的方案
+
+当前无预测，直接锁定当前帧位置
+
+### 3.2 Aimmy：三种预测算法
+
+#### A. Kalman Filter（卡尔曼滤波）
+
+```csharp
+// PredictionManager.cs - KalmanPrediction
+
+// 状态向量：[x, y, vx, vy]
+private double _x, _y, _vx, _vy;
+
+// 预测步骤
+double predictedX = _x + _vx * dt;
+double predictedY = _y + _vy * dt;
+
+// 更新步骤（融合观测值）
+double K = _p00 / (_p00 + MeasurementNoise);  // 卡尔曼增益
+_x = predictedX + K * innovationX;
+_y = predictedY + K * innovationY;
+
+// 预测未来位置（根据 Lead Time）
+double predictedX = currentX + _vx * leadTime;
+```
+
+**可借鉴价值：★★★★☆**
+
+适用场景：移动目标预测
+
+#### B. EMA 预测（指数移动平均）
+
+```csharp
+// WiseTheFoxPrediction
+_emaX = Alpha * detection.X + (1.0 - Alpha) * _emaX;
+_velocityX = Alpha * newVelocityX + (1.0 - Alpha) * _velocityX;
+
+// 预测
+predictedX = _emaX + _velocityX * leadTime;
+```
+
+**特点：** 比卡尔曼简单，效果接近
+
+#### C. 历史速度平均
+
+```csharp
+// ShalloePredictionV2
+// 保留最近5帧速度
+_velocityXHistory.Add(velocityX);
+
+// 使用平均速度预测
+double avgVelocity = _velocityXHistory.Average();
+return _prevX + avgVelocity * leadMultiplier;
+```
+
+**特点：** 最简单，适合初步实现
+
+### 3.3 建议实现顺序
+
+```
+1. 先实现 Sticky Aim（解决抖动问题）
+2. 再实现 EMA 预测（简单有效）
+3. 有需要再升级到 Kalman
+```
+
+---
+
+## 四、鼠标移动对比
+
+### 4.1 我们的方案：KmBox 硬件
+
+```csharp
+_kmBox.MouseMove(deltaX, deltaY);
+_kmBox.MouseMoveBeizer(x, y, ms, x1, y1, x2, y2);  // 贝塞尔曲线
+```
+
+**优点：** 硬件级，无法检测
+
+### 4.2 Aimmy：多种移动路径
+
+```csharp
+// MouseManager.cs - MoveCrosshair()
+
+switch (Dictionary.dropdownState["Movement Path"])
+{
+    case "Cubic Bezier":     // 三次贝塞尔
+    case "Linear":           // 线性插值
+    case "Exponential":      // 指数曲线
+    case "Adaptive":         // 自适应
+    case "Perlin Noise":     // 柏林噪声（拟人化）
+}
+
+// EMA 平滑（可选）
+if (IsEMASmoothingEnabled)
+{
+    newPosition.X = EmaSmoothing(previousX, newPosition.X, smoothingFactor);
+}
+
+// 随机抖动（拟人化）
+int jitterX = MouseRandom.Next(-MouseJitter, MouseJitter);
+newPosition.X += jitterX;
+
+// 移动范围限制
+newPosition.X = Math.Clamp(newPosition.X, -150, 150);
+```
+
+**可借鉴：**
+1. **柏林噪声** - 让移动更像人类
+2. **随机抖动** - 增加不可预测性
+3. **范围限制** - 我们已有 MaxMoveRange
+
+### 4.3 AI-Aimbot：简单直接
+
+```python
+# 移动量放大系数
+mouseMove = [xMid - cWidth, (yMid - headshot_offset) - cHeight]
+win32api.mouse_event(MOUSEEVENTF_MOVE, 
+    int(mouseMove[0] * aaMovementAmp), 
+    int(mouseMove[1] * aaMovementAmp), 0, 0)
+```
+
+**特点：** 简单，但容易被检测
+
+---
+
+## 五、帧处理策略对比
+
+| 项目 | 采集跟不上推理 | 推理跟不上采集 |
+|------|---------------|---------------|
+| **我们** | YOLO线程等待 `_frameEvent` | **丢弃中间帧**（`_frameState != 0` 直接return） |
+| **Aimmy** | 返回缓存帧 | 自动降低处理帧率 |
+| **AI-Aimbot** | 不会发生（取最新帧） | 丢弃中间帧，只处理最新 |
+
+**我们的优势：** 回调丢帧模式，只处理最新可用帧，无堆积、无延迟累加。
+
+---
+
+## 六、爆头偏移对比
+
+### 6.1 我们的方案
+
+使用姿态关键点精确定位额头：
+```csharp
+// 额头Y = 最佳头部点与框顶加权
+int y = (bestY + bounds.Y * 2) / 3;
+```
+
+### 6.2 Aimmy：百分比偏移
+
+```csharp
+// AIManager.cs - CalculateDetectedY()
+switch (Dictionary.dropdownState["Aiming Boundaries Alignment"])
+{
+    case "Center": yAdjustment = rect.Height / 2;
+    case "Top":    yAdjustment = 0;
+    case "Bottom": yAdjustment = rect.Height;
+}
+
+// 百分比调整
+detectedY = (rect.Y + rect.Height - (rect.Height * (YOffsetPercentage / 100))) * scaleY;
+```
+
+### 6.3 AI-Aimbot：固定比例
+
+```python
+# 爆头模式：框高度的38%
+if headshot_mode:
+    headshot_offset = box_height * 0.38
+else:
+    headshot_offset = box_height * 0.2
+```
+
+**我们的优势：** 姿态关键点更精确，不依赖固定比例
+
+---
+
+## 七、可借鉴功能优先级（总表）
+
+> 2026-08-06 整理：合并首版（Aimmy/AI-Aimbot）与附录增补（sunone/APEX 等）两处重复表格。
+
+| 优先级 | 功能 | 来源 | 实现难度 | 价值 |
+|--------|------|------|----------|------|
+| ★★★★★ | **ByteTrack 目标跟踪** | sunone | 中 | 比 Sticky Aim 更专业（自动 ID/遮挡处理） |
+| ★★★★★ | **加速度预测** | sunone | 低 | 比简单 EMA 更准确 |
+| ★★★★★ | **Sticky Aim** | Aimmy | 中 | 解决目标抖动（ISSUE-006） |
+| ★★★★☆ | **EMA 速度预测** | Aimmy | 低 | 预判移动目标（ISSUE-007） |
+| ★★★★☆ | **PID 精细控制** | APEX_AIMBOT | 中 | 近距离精确调整 |
+| ★★★★☆ | **跳变检测重置** | sunone | 低 | 目标切换时重置预测 |
+| ★★★★☆ | **帧缓存机制** | Aimmy | 低 | 采集失败时不卡 |
+| ★★★☆☆ | **分区域移动策略** | APEX_AIMBOT | 低 | 远快近慢 |
+| ★★★☆☆ | **鼠标抖动** | Aimmy | 低 | 拟人化 |
+| ★★★☆☆ | **柏林噪声路径** | Aimmy | 中 | 拟人化 |
+| ★★☆☆☆ | **Kalman Filter** | Aimmy | 高 | 高级预测 |
+
+---
+
+## 八、Sticky Aim 实现方案
+
+基于 Aimmy 的设计，适配我们的项目：
+
+```csharp
+// 添加到 TargetSelector.cs
+
+private static LockResult? _lastTarget;
+private static int _framesWithoutTarget;
+private static float _lockScore;
+
+private const int MAX_FRAMES_WITHOUT_TARGET = 3;
+private const float LOCK_SCORE_DECAY = 0.85f;
+private const float LOCK_SCORE_GAIN = 15f;
+private const float MAX_LOCK_SCORE = 100f;
+
+public static LockResult ProcessTargets(..., bool useStickyAim = true)
+{
+    var candidates = GetAllCandidates();
+    
+    if (!useStickyAim || _lastTarget == null)
+        return SelectNearest(candidates);
+    
+    // 尝试匹配上一帧目标
+    var matched = TryMatchLastTarget(candidates, _lastTarget);
+    
+    if (matched != null)
+    {
+        _framesWithoutTarget = 0;
+        _lockScore = Math.Min(MAX_LOCK_SCORE, _lockScore + LOCK_SCORE_GAIN);
+        _lastTarget = matched;
+        return matched;
+    }
+    
+    // 未匹配到，允许短暂丢失
+    if (++_framesWithoutTarget <= MAX_FRAMES_WITHOUT_TARGET)
+    {
+        _lockScore *= LOCK_SCORE_DECAY;
+        return _lastTarget;  // 返回上一帧位置
+    }
+    
+    // 切换到新目标
+    _lockScore = LOCK_SCORE_GAIN;
+    _lastTarget = SelectNearest(candidates);
+    return _lastTarget;
+}
+
+private static LockResult? TryMatchLastTarget(List<Candidate> candidates, LockResult last)
+{
+    foreach (var c in candidates)
+    {
+        float distSq = (c.X - last.TargetX)² + (c.Y - last.TargetY)²;
+        float trackingRadius = last.BoxSize * 2f;
+        
+        if (distSq < trackingRadius * trackingRadius)
+            return c.ToLockResult();
+    }
+    return null;
+}
+```
+
+---
+
+## 九、EMA 速度预测实现方案
+
+```csharp
+// 添加到 TargetSelector.cs
+
+private static float _emaX, _emaY;
+private static float _velocityX, _velocityY;
+private static float _prevX, _prevY;
+private static DateTime _lastUpdateTime;
+private const float ALPHA = 0.5f;  // 平滑系数
+
+public static (int X, int Y) GetPredictedPosition(int rawX, int rawY, float leadTime)
+{
+    var now = DateTime.UtcNow;
+    float dt = (float)(now - _lastUpdateTime).TotalSeconds;
+    dt = Math.Clamp(dt, 0.001f, 0.1f);
+    
+    // EMA 平滑位置
+    _emaX = ALPHA * rawX + (1 - ALPHA) * _emaX;
+    _emaY = ALPHA * rawY + (1 - ALPHA) * _emaY;
+    
+    // 计算速度
+    float newVelX = (_emaX - _prevX) / dt;
+    float newVelY = (_emaY - _prevY) / dt;
+    
+    // EMA 平滑速度
+    _velocityX = ALPHA * newVelX + (1 - ALPHA) * _velocityX;
+    _velocityY = ALPHA * newVelY + (1 - ALPHA) * _velocityY;
+    
+    _prevX = _emaX;
+    _prevY = _emaY;
+    _lastUpdateTime = now;
+    
+    // 预测未来位置
+    int predictedX = (int)(_emaX + _velocityX * leadTime);
+    int predictedY = (int)(_emaY + _velocityY * leadTime);
+    
+    return (predictedX, predictedY);
+}
+```
+
+---
+
+## 十、项目文件对照
+
+| 功能模块 | 我们的文件 | Aimmy 对应文件 | AI-Aimbot 对应文件 |
+|----------|-----------|----------------|-------------------|
+| 主循环 | Form1.cs | AIManager.cs | main_tensorrt.py |
+| 目标选择 | TargetSelector.cs | AIManager.PrepareKDTreeData() | (内联) |
+| 鼠标控制 | KmBoxNet.cs | MouseManager.cs | (win32api) |
+| 屏幕采集 | MWCapture/ | CaptureManager.cs | gameSelection.py |
+| 预测算法 | (待实现) | PredictionManager.cs | (无) |
+| 配置参数 | GameConfig.cs | Dictionary.cs | config.py |
+
+---
+
+## 十一、下一步行动
+
+1. **立即可做**
+   - [ ] 实现 Sticky Aim 防抖动
+   - [ ] 添加鼠标随机抖动
+
+2. **短期优化**
+   - [ ] 实现 EMA 速度预测
+   - [ ] 添加帧缓存机制
+
+3. **长期规划**
+   - [ ] 研究 Kalman Filter
+   - [ ] 研究柏林噪声路径
+
+---
+
+*文档创建日期：2025-01-28*
+*参考项目：Aimmy (github.com/Babyhamsta/Aimmy), AI-Aimbot (github.com/RootKit-Org/AI-Aimbot)*
+
+---
+
+## 附录：新增项目详细分析
+
+### A. sunone_aimbot（★★★★★ 强烈推荐参考）
+
+**项目地址：** github.com/SunOner/sunone_aimbot
+
+这是目前分析的项目中**功能最完整**的一个。
+
+#### A.1 ByteTrack 目标跟踪
+
+```python
+# run.py - 使用 supervision 库的 ByteTrack
+import supervision as sv
+tracker = sv.ByteTrack() if not cfg.disable_tracker else None
+
+# 推理后更新跟踪
+det = sv.Detections.from_ultralytics(res)
+return tracker.update_with_detections(det)
+```
+
+**可借鉴价值：★★★★★**
+
+ByteTrack 比 Sticky Aim 更专业：
+- 自动分配目标ID
+- 处理遮挡、丢失
+- 多目标一致跟踪
+
+#### A.2 速度+加速度预测
+
+```python
+# mouse.py - predict_target_position()
+
+# 计算速度和加速度
+velocity_x = (target_x - self.prev_x) / delta_time
+acceleration_x = (velocity_x - self.prev_velocity_x) / delta_time
+
+# 二次预测（位置 + 速度×时间 + 0.5×加速度×时间²）
+predicted_x = target_x + velocity_x * prediction_interval * proximity_factor \
+              + 0.5 * acceleration_x * (prediction_interval ** 2)
+
+# 跳变检测：位置变化太大时重置
+max_jump = max(screen_width, screen_height) * 0.3
+if abs(target_x - self.prev_x) > max_jump:
+    self.prev_velocity_x = 0  # 重置速度
+```
+
+**可借鉴价值：★★★★★**
+
+比简单 EMA 更准确，考虑了加速度！
+
+#### A.3 距离自适应速度
+
+```python
+# mouse.py - calculate_speed_multiplier()
+
+# 距离越近，移动越慢（避免过冲）
+normalized_distance = distance / max_distance
+speed_multiplier = min_speed + (max_speed - min_speed) * (1 - normalized_distance)
+
+# 接近中心时进一步降低
+if distance_from_center == 0:
+    return 1
+elif 5 <= distance_from_center <= 10:
+    return max_speed_multiplier
+```
+
+**可借鉴：** 我们的 Trace 功能类似，但这个更细腻
+
+#### A.4 EMA 鼠标平滑
+
+```python
+# mouse.py - calc_movement()
+alpha = 0.85
+move_x = alpha * mouse_move_x + (1 - alpha) * self.last_move_x
+```
+
+#### A.5 多采集方式
+
+```python
+# capture.py
+if cfg.Bettercam_capture:   # 高性能 DXGI
+    bc = bettercam.create(...)
+elif cfg.Obs_capture:        # OBS 虚拟摄像头
+    obs_camera = cv2.VideoCapture(camera_id)
+elif cfg.mss_capture:        # Python mss 截图
+    sct.grab(monitor)
+```
+
+#### A.6 多鼠标驱动
+
+支持 Arduino、Logitech GHub、Razer rzctl、win32api 四种。
+
+---
+
+### B. APEX_AIMBOT（★★★★☆ PID控制器）
+
+**项目地址：** github.com/NTUYWANG103/APEX_AIMBOT
+
+#### B.1 PID 控制器移动
+
+```python
+# AimBot.py - 使用 simple_pid 库
+from simple_pid import PID
+
+self.pidx = PID(kp=1.2, kd=3.51, ki=0.0, setpoint=0)
+self.pidy = PID(kp=1.22, kd=0.24, ki=0.0, setpoint=0)
+
+# 近距离使用 PID 平滑
+if move_dis <= max_pid_dis:
+    move_rel_x = self.pidx(atan2(-move_rel_x, detect_length) * detect_length)
+    move_rel_y = self.pidy(atan2(-move_rel_y, detect_length) * detect_length)
+```
+
+**可借鉴价值：★★★★☆**
+
+PID 控制适合精细微调：
+- 距离远时快速移动
+- 距离近时 PID 精确调整
+
+#### B.2 分区域策略
+
+```yaml
+# apex.yaml
+max_lock_dis: 200   # 最大锁定距离
+max_step_dis: 120   # 单次最大移动量
+max_pid_dis: 30     # PID生效距离
+```
+
+```python
+if move_dis >= max_step_dis:
+    # 限速移动
+    move_rel_x = move_rel_x / move_dis * max_step_dis
+elif move_dis <= max_pid_dis:
+    # PID 精调
+    move_rel_x = self.pidx(...)
+```
+
+---
+
+### C. FPSAutomaticAiming（★★☆☆☆ 简单参考）
+
+**项目地址：** github.com/chaoyu1999/FPSAutomaticAiming
+
+基于 YOLOv5 的简单实现，使用易键鼠 DLL 控制：
+
+```python
+# Main.py
+dll = cdll.LoadLibrary(r'lib/Dll.dll')  # 易键鼠DLL
+
+# 移动到目标
+dll.MoveTo2(int(LEFT + btc[0]), int(TOP + btc[1]))
+```
+
+**参考价值有限**，但可以作为入门级实现参考。
+
+---
+
+### D. AimYolo（★★☆☆☆ 简单参考）
+
+**项目地址：** github.com/Aa-bN/AimYolo
+
+基于 YOLOv5 的简单实现，使用 ctypes 控制鼠标：
+
+```python
+# z_detect5.py - 移动到最近目标
+def move_mouse(mouse_pynput, aim_persons_center):
+    # 欧氏距离排序
+    dist = ((aim_person[0] - current_x)**2 + (aim_person[1] - current_y)**2)**0.5
+    
+    # 绝对定位移动
+    tx = int(best_position[0][0] / screen_width * 65535)
+    SendInput(mouse_input(MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE, tx, ty))
+```
+
+**注意：** 使用绝对定位，与我们的相对移动不同。
+
+---
+
+### E. AIMr（★☆☆☆☆ 代码混淆）
+
+**项目地址：** github.com/ai-aimbot/AIMr
+
+代码经过 zlib+base64 混淆，无法直接分析。跳过。
+
+---
+
+*更新日期：2025-01-28（新增参考：sunone_aimbot, APEX_AIMBOT, FPSAutomaticAiming, AimYolo, AIMr）*
+*2026-08-06 文档规范化整理：迁入 docs/ 并合并重复的可借鉴功能总表（见第七节）*
